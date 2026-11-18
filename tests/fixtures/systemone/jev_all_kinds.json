@@ -1,0 +1,49 @@
+{
+  "model": "jev/jev-latest",
+  "config": { "api_key": "k" },
+  "request": {
+    "input": "Great product, arrived late.",
+    "questions": {
+      "positive": { "kind": "yesno", "instructions": "Is the review positive?" },
+      "topic": { "kind": "choice", "instructions": "Main topic?", "options": { "shipping": "Delivery", "quality": "Product" } },
+      "urgency": { "kind": "score", "instructions": "How urgent?", "levels": [ { "id": "low", "description": "Can wait" }, { "id": "high", "description": "Act now" } ] }
+    }
+  },
+  "http": {
+    "url": "https://api.typesafe.ai/v1/systemone",
+    "headers": [ ["content-type", "application/json"], ["authorization", "Bearer k"] ],
+    "body": {
+      "model": "jev-latest",
+      "state": "Great product, arrived late.",
+      "questions": {
+        "positive": { "type": "noul", "prompt": "Is the review positive?" },
+        "topic": { "type": "choice", "prompt": "Main topic?", "criteria": { "shipping": "Delivery", "quality": "Product" } },
+        "urgency": { "type": "score", "prompt": "How urgent?", "levels": [ { "id": "low", "description": "Can wait" }, { "id": "high", "description": "Act now" } ] }
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": [],
+    "body": {
+      "model": "jev-latest-2026-11",
+      "answers": {
+        "positive": { "probability": 0.75 },
+        "topic": { "choice": "shipping", "probabilities": { "shipping": 0.5, "quality": 0.25 } },
+        "urgency": { "value": 0.5, "probabilities": { "low": 0.5, "high": 0.25 } }
+      },
+      "usage": { "input_tokens": 42 }
+    }
+  },
+  "expected": {
+    "ok": {
+      "model": "jev-latest-2026-11",
+      "input_tokens": 42,
+      "answers": {
+        "positive": { "kind": "yesno", "probability": 0.75 },
+        "topic": { "kind": "choice", "choice": "shipping", "probabilities": { "shipping": 0.5, "quality": 0.25 } },
+        "urgency": { "kind": "score", "value": 0.5, "probabilities": { "low": 0.5, "high": 0.25 } }
+      }
+    }
+  }
+}
