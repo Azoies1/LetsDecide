@@ -1,21 +1,25 @@
-//! Adapter for the System One wire shape (Jev, Clef, compatible servers).
+//! Adapter for the System One wire family: Jev, Clef, Gemini and compatible
+//! servers. One shape, four presets.
 //!
-//! Wire format is assumed from the spec; verify against provider docs.
+//! Verified against Gemini's reference (via a third-party mirror). Jev and Clef
+//! are assumed to match it; check their docs.
 
+use crate::provider::{http_error, post};
 use crate::*;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-/// One adapter, three presets: `jev`, `clef`, `systemone` (custom base URL).
+/// Presets: `jev`, `clef`, `gemini`, `systemone` (custom base URL).
 pub struct SystemOne {
     preset: Preset,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 enum Preset {
     Jev,
     Clef,
+    Gemini,
     Custom,
 }
 
@@ -24,6 +28,7 @@ impl SystemOne {
         let preset = match name {
             "jev" => Preset::Jev,
             "clef" => Preset::Clef,
+            "gemini" => Preset::Gemini,
             "systemone" => Preset::Custom,
             _ => return None,
         };
@@ -41,6 +46,9 @@ impl SystemOne {
         };
         Ok(match self.preset {
             Preset::Jev => base("https://api.typesafe.ai") + "/v1/systemone",
+            Preset::Gemini => {
+                base("https://generativelanguage.googleapis.com") + "/v1beta/decisions"
+            }
             Preset::Custom => {
                 if cfg.base_url.is_none() {
                     return Err(missing("base_url"));
@@ -58,10 +66,10 @@ impl SystemOne {
         })
     }
 
-    /// Clef: 64 questions per request.
     fn max_questions(&self) -> usize {
         match self.preset {
             Preset::Clef => 64,
+            Preset::Gemini => 1000,
             _ => usize::MAX,
         }
     }
@@ -72,7 +80,11 @@ impl SystemOne {
 struct Body<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     model: Option<&'a str>,
-    state: &'a Value,
+    // Jev and Clef call the input `state`; Gemini calls it `input`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    state: Option<&'a Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    input: Option<Value>,
     questions: BTreeMap<&'a str, Wire<'a>>,
 }
 
@@ -80,38 +92,47 @@ struct Body<'a> {
 #[serde(tag = "type", rename_all = "lowercase")]
 enum Wire<'a> {
     Noul {
-        prompt: &'a str,
+        instructions: &'a str,
     },
     Choice {
-        prompt: &'a str,
+        instructions: &'a str,
         criteria: &'a BTreeMap<Id, String>,
     },
     Score {
-        prompt: &'a str,
-        levels: &'a [Level],
+        instructions: &'a str,
+        criteria: Vec<&'a str>,
     },
 }
 
 // Response wire types.
 #[derive(Deserialize)]
 struct Reply {
-    model: String,
+    model: Option<String>,
+    #[serde(default)]
     answers: BTreeMap<Id, RawAnswer>,
     usage: Option<Usage>,
+    prompt_feedback: Option<PromptFeedback>,
 }
 
 #[derive(Deserialize)]
 struct Usage {
+    #[serde(alias = "total_input_tokens")]
     input_tokens: Option<u32>,
 }
 
 #[derive(Deserialize)]
+struct PromptFeedback {
+    block_reason: Option<String>,
+}
+
+#[derive(Deserialize)]
 struct RawAnswer {
-    probability: Option<f32>,
+    noul: Option<f32>,
     choice: Option<Id>,
-    value: Option<f32>,
+    score: Option<f32>,
+    confidence: Option<f32>,
     #[serde(default)]
-    probabilities: BTreeMap<Id, f32>,
+    probabilities: BTreeMap<String, f32>,
 }
 
 impl Provider for SystemOne {
@@ -133,43 +154,44 @@ impl Provider for SystemOne {
             .iter()
             .map(|(id, q)| {
                 let wire = match q {
-                    Question::YesNo { instructions } => Wire::Noul {
-                        prompt: instructions,
-                    },
+                    Question::YesNo { instructions } => Wire::Noul { instructions },
                     Question::Choice {
                         instructions,
                         options,
                     } => Wire::Choice {
-                        prompt: instructions,
+                        instructions,
                         criteria: options,
                     },
                     Question::Score {
                         instructions,
                         levels,
                     } => Wire::Score {
-                        prompt: instructions,
-                        levels,
+                        instructions,
+                        criteria: levels.iter().map(|l| l.description.as_str()).collect(),
                     },
                 };
                 (id.as_str(), wire)
             })
             .collect();
+        let gemini = self.preset == Preset::Gemini;
         let body = Body {
             // Clef puts the model in the URL.
-            model: (!matches!(self.preset, Preset::Clef)).then_some(model),
-            state: &req.input,
+            model: (self.preset != Preset::Clef).then_some(model),
+            state: (!gemini).then_some(&req.input),
+            // Gemini takes text; JSON must be sent as a string.
+            input: gemini.then(|| match &req.input {
+                Value::String(_) => req.input.clone(),
+                other => Value::String(other.to_string()),
+            }),
             questions,
         };
-        let mut headers = vec![("content-type".to_owned(), "application/json".to_owned())];
-        if let Some(key) = &cfg.api_key {
-            headers.push(("authorization".to_owned(), format!("Bearer {key}")));
-        }
-        Ok(HttpRequest {
-            method: "POST",
-            url: self.url(model, cfg)?,
-            headers,
-            body: serde_json::to_vec(&body)
-                .map_err(|e| Error::new(ErrorCode::InvalidRequest, e.to_string()))?,
+        let body = serde_json::to_vec(&body)
+            .map_err(|e| Error::new(ErrorCode::InvalidRequest, e.to_string()))?;
+        let url = self.url(model, cfg)?;
+        Ok(if gemini {
+            post(url, "x-goog-api-key", false, cfg, body)
+        } else {
+            post(url, "authorization", true, cfg, body)
         })
     }
 
@@ -182,6 +204,21 @@ impl Provider for SystemOne {
             ..Error::new(ErrorCode::BadResponse, m)
         };
         let mut reply: Reply = serde_json::from_slice(&res.body).map_err(|e| bad(e.to_string()))?;
+        let input_tokens = reply.usage.and_then(|u| u.input_tokens);
+
+        // Input blocked by a safety filter: nothing was evaluated.
+        if reply.prompt_feedback.and_then(|f| f.block_reason).is_some() {
+            let answers = req
+                .questions
+                .keys()
+                .map(|id| (id.clone(), Answer::Refused))
+                .collect();
+            return Ok(DecisionResponse {
+                model: reply.model,
+                answers,
+                input_tokens,
+            });
+        }
 
         let mut answers = BTreeMap::new();
         for (id, q) in &req.questions {
@@ -192,15 +229,24 @@ impl Provider for SystemOne {
             let missing = |f: &str| bad(format!("answer `{id}` missing `{f}`"));
             let answer = match q {
                 Question::YesNo { .. } => Answer::YesNo {
-                    probability: raw.probability.ok_or_else(|| missing("probability"))?,
+                    probability: raw.noul.ok_or_else(|| missing("noul"))?,
                 },
                 Question::Choice { .. } => Answer::Choice {
                     choice: raw.choice.ok_or_else(|| missing("choice"))?,
+                    confidence: raw.confidence,
                     probabilities: raw.probabilities,
                 },
-                Question::Score { .. } => Answer::Score {
-                    value: raw.value.ok_or_else(|| missing("value"))?,
-                    probabilities: raw.probabilities,
+                Question::Score { levels, .. } => Answer::Score {
+                    value: raw.score.ok_or_else(|| missing("score"))?,
+                    confidence: raw.confidence,
+                    // Providers key probabilities by 0-based level index.
+                    probabilities: levels
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(i, l)| {
+                            Some((l.id.clone(), *raw.probabilities.get(&i.to_string())?))
+                        })
+                        .collect(),
                 },
             };
             answers.insert(id.clone(), answer);
@@ -208,27 +254,7 @@ impl Provider for SystemOne {
         Ok(DecisionResponse {
             model: reply.model,
             answers,
-            input_tokens: reply.usage.and_then(|u| u.input_tokens),
+            input_tokens,
         })
-    }
-}
-
-fn http_error(res: &HttpResponse) -> Error {
-    let code = match res.status {
-        401 | 403 => ErrorCode::Auth,
-        429 => ErrorCode::RateLimited,
-        500..=599 => ErrorCode::ProviderUnavailable,
-        _ => ErrorCode::InvalidRequest,
-    };
-    let retry_after_ms = res
-        .headers
-        .iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case("retry-after"))
-        .and_then(|(_, v)| v.trim().parse::<u64>().ok())
-        .map(|s| s * 1000);
-    Error {
-        status: Some(res.status),
-        retry_after_ms,
-        ..Error::new(code, format!("HTTP {}", res.status))
     }
 }

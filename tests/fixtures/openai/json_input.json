@@ -1,0 +1,61 @@
+{
+  "model": "openai/gpt-6-luna",
+  "config": {},
+  "request": {
+    "input": {
+      "order": {
+        "id": 1
+      }
+    },
+    "questions": {
+      "q": {
+        "kind": "yesno",
+        "instructions": "?"
+      }
+    }
+  },
+  "http": {
+    "url": "https://api.openai.com/v1/decisions",
+    "headers": [
+      [
+        "content-type",
+        "application/json"
+      ]
+    ],
+    "body": {
+      "model": "gpt-6-luna",
+      "input": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "input_json",
+              "data": {
+                "order": {
+                  "id": 1
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "questions": [
+        {
+          "type": "predicate",
+          "name": "q",
+          "instructions": "?"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 401,
+    "headers": [],
+    "body": {}
+  },
+  "expected": {
+    "error": {
+      "code": "Auth"
+    }
+  }
+}

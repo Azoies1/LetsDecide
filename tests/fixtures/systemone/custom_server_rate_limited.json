@@ -1,12 +1,50 @@
 {
   "model": "systemone/my-model",
-  "config": { "base_url": "http://localhost:8080/" },
-  "request": { "input": "x", "questions": { "q": { "kind": "yesno", "instructions": "?" } } },
+  "config": {
+    "base_url": "http://localhost:8080/"
+  },
+  "request": {
+    "input": "x",
+    "questions": {
+      "q": {
+        "kind": "yesno",
+        "instructions": "?"
+      }
+    }
+  },
   "http": {
     "url": "http://localhost:8080/v1/systemone",
-    "headers": [ ["content-type", "application/json"] ],
-    "body": { "model": "my-model", "state": "x", "questions": { "q": { "type": "noul", "prompt": "?" } } }
+    "headers": [
+      [
+        "content-type",
+        "application/json"
+      ]
+    ],
+    "body": {
+      "model": "my-model",
+      "state": "x",
+      "questions": {
+        "q": {
+          "type": "noul",
+          "instructions": "?"
+        }
+      }
+    }
   },
-  "response": { "status": 429, "headers": [ ["Retry-After", "2"] ], "body": {} },
-  "expected": { "error": { "code": "RateLimited", "retry_after_ms": 2000 } }
+  "response": {
+    "status": 429,
+    "headers": [
+      [
+        "Retry-After",
+        "2"
+      ]
+    ],
+    "body": {}
+  },
+  "expected": {
+    "error": {
+      "code": "RateLimited",
+      "retry_after_ms": 2000
+    }
+  }
 }

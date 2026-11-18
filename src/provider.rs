@@ -1,4 +1,4 @@
-use crate::{DecisionRequest, DecisionResponse, Error, ErrorCode, SystemOne};
+use crate::{DecisionRequest, DecisionResponse, Error, ErrorCode, OpenAi, SystemOne};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -60,11 +60,62 @@ pub fn resolve(model_ref: &str) -> Result<(Box<dyn Provider>, &str), Error> {
                 "model must look like `provider/model`",
             )
         })?;
-    match SystemOne::preset(provider) {
-        Some(p) => Ok((Box::new(p), model)),
-        None => Err(Error::new(
-            ErrorCode::Unsupported,
-            format!("unknown provider `{provider}`"),
-        )),
+    let adapter: Box<dyn Provider> = match provider {
+        "openai" => Box::new(OpenAi),
+        _ => match SystemOne::preset(provider) {
+            Some(p) => Box::new(p),
+            None => {
+                let m = format!("unknown provider `{provider}`");
+                return Err(Error::new(ErrorCode::Unsupported, m));
+            }
+        },
+    };
+    Ok((adapter, model))
+}
+
+/// Shared by adapters: classify a non-2xx reply. Never echoes the body.
+pub(crate) fn http_error(res: &HttpResponse) -> Error {
+    let code = match res.status {
+        401 | 403 => ErrorCode::Auth,
+        429 => ErrorCode::RateLimited,
+        500..=599 => ErrorCode::ProviderUnavailable,
+        _ => ErrorCode::InvalidRequest,
+    };
+    let retry_after_ms = res
+        .headers
+        .iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("retry-after"))
+        .and_then(|(_, v)| v.trim().parse::<u64>().ok())
+        .map(|s| s * 1000);
+    let message = format!("HTTP {}", res.status);
+    Error {
+        status: Some(res.status),
+        retry_after_ms,
+        ..Error::new(code, message)
+    }
+}
+
+/// Shared by adapters: JSON POST, key as `Bearer` or raw in a custom header.
+pub(crate) fn post(
+    url: String,
+    key_header: &str,
+    bearer: bool,
+    cfg: &Config,
+    body: Vec<u8>,
+) -> HttpRequest {
+    let mut headers = vec![("content-type".to_owned(), "application/json".to_owned())];
+    if let Some(key) = &cfg.api_key {
+        let value = if bearer {
+            format!("Bearer {key}")
+        } else {
+            key.clone()
+        };
+        headers.push((key_header.to_owned(), value));
+    }
+    HttpRequest {
+        method: "POST",
+        url,
+        headers,
+        body,
     }
 }

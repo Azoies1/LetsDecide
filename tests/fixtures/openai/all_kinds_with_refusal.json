@@ -1,0 +1,154 @@
+{
+  "model": "openai/gpt-6-luna",
+  "config": {
+    "api_key": "o"
+  },
+  "request": {
+    "input": "I was charged twice.",
+    "questions": {
+      "is_defect": {
+        "kind": "yesno",
+        "instructions": "Is this a billing problem?"
+      },
+      "dept": {
+        "kind": "choice",
+        "instructions": "Which department?",
+        "options": {
+          "billing": "Payments",
+          "shipping": "Delivery"
+        }
+      },
+      "severity": {
+        "kind": "score",
+        "instructions": "How severe?",
+        "levels": [
+          {
+            "id": "low",
+            "description": "Cosmetic"
+          },
+          {
+            "id": "high",
+            "description": "Blocked"
+          }
+        ]
+      }
+    }
+  },
+  "http": {
+    "url": "https://api.openai.com/v1/decisions",
+    "headers": [
+      [
+        "content-type",
+        "application/json"
+      ],
+      [
+        "authorization",
+        "Bearer o"
+      ]
+    ],
+    "body": {
+      "model": "gpt-6-luna",
+      "input": "I was charged twice.",
+      "questions": [
+        {
+          "type": "choice",
+          "name": "dept",
+          "instructions": "Which department?",
+          "choices": [
+            {
+              "value": "billing",
+              "description": "Payments"
+            },
+            {
+              "value": "shipping",
+              "description": "Delivery"
+            }
+          ]
+        },
+        {
+          "type": "predicate",
+          "name": "is_defect",
+          "instructions": "Is this a billing problem?"
+        },
+        {
+          "type": "score",
+          "name": "severity",
+          "instructions": "How severe?",
+          "levels": [
+            {
+              "label": "low",
+              "description": "Cosmetic"
+            },
+            {
+              "label": "high",
+              "description": "Blocked"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": [],
+    "body": {
+      "model": "gpt-6-luna",
+      "answers": [
+        {
+          "type": "choice",
+          "name": "dept",
+          "choice": "billing",
+          "confidence": 0.75,
+          "probabilities": [
+            {
+              "value": "billing",
+              "probability": 0.75
+            },
+            {
+              "value": "shipping",
+              "probability": 0.25
+            }
+          ]
+        },
+        {
+          "type": "predicate",
+          "name": "is_defect",
+          "probability": 0.75
+        },
+        {
+          "type": "refusal",
+          "name": "severity"
+        }
+      ],
+      "usage": {
+        "input_tokens": 42,
+        "output_tokens": 0,
+        "total_tokens": 42
+      }
+    }
+  },
+  "expected": {
+    "ok": {
+      "model": "gpt-6-luna",
+      "input_tokens": 42,
+      "answers": {
+        "dept": {
+          "kind": "choice",
+          "choice": "billing",
+          "confidence": 0.75,
+          "probabilities": {
+            "billing": 0.75,
+            "shipping": 0.25
+          }
+        },
+        "is_defect": {
+          "kind": "yesno",
+          "probability": 0.75
+        },
+        "severity": {
+          "kind": "refused"
+        }
+      }
+    }
+  }
+}

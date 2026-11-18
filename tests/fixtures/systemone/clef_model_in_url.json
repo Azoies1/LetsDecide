@@ -1,12 +1,67 @@
 {
   "model": "clef/clef-flash",
-  "config": { "api_key": "t", "account_id": "acc1" },
-  "request": { "input": { "text": "hi" }, "questions": { "greeting": { "kind": "yesno", "instructions": "Is this a greeting?" } } },
+  "config": {
+    "api_key": "t",
+    "account_id": "acc1"
+  },
+  "request": {
+    "input": {
+      "text": "hi"
+    },
+    "questions": {
+      "greeting": {
+        "kind": "yesno",
+        "instructions": "Greeting?"
+      }
+    }
+  },
   "http": {
     "url": "https://api.cloudflare.com/client/v4/accounts/acc1/ai/run/@cf/cloudflare/clef-flash",
-    "headers": [ ["content-type", "application/json"], ["authorization", "Bearer t"] ],
-    "body": { "state": { "text": "hi" }, "questions": { "greeting": { "type": "noul", "prompt": "Is this a greeting?" } } }
+    "headers": [
+      [
+        "content-type",
+        "application/json"
+      ],
+      [
+        "authorization",
+        "Bearer t"
+      ]
+    ],
+    "body": {
+      "state": {
+        "text": "hi"
+      },
+      "questions": {
+        "greeting": {
+          "type": "noul",
+          "instructions": "Greeting?"
+        }
+      }
+    }
   },
-  "response": { "status": 200, "headers": [], "body": { "model": "clef-flash", "answers": { "greeting": { "probability": 0.5 } } } },
-  "expected": { "ok": { "model": "clef-flash", "input_tokens": null, "answers": { "greeting": { "kind": "yesno", "probability": 0.5 } } } }
+  "response": {
+    "status": 200,
+    "headers": [],
+    "body": {
+      "answers": {
+        "greeting": {
+          "type": "noul",
+          "noul": 0.5,
+          "confidence": 0.5
+        }
+      }
+    }
+  },
+  "expected": {
+    "ok": {
+      "model": null,
+      "input_tokens": null,
+      "answers": {
+        "greeting": {
+          "kind": "yesno",
+          "probability": 0.5
+        }
+      }
+    }
+  }
 }

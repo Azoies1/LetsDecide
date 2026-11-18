@@ -41,8 +41,8 @@ pub struct Level {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DecisionResponse {
-    /// Model that actually answered.
-    pub model: String,
+    /// Model that answered, when the provider reports it.
+    pub model: Option<String>,
     pub answers: BTreeMap<Id, Answer>,
     pub input_tokens: Option<u32>,
 }
@@ -53,14 +53,21 @@ pub struct DecisionResponse {
 pub enum Answer {
     /// P(yes).
     YesNo { probability: f32 },
+    /// `confidence`: the provider's own number, if it sends one.
     Choice {
         choice: Id,
+        confidence: Option<f32>,
         probabilities: BTreeMap<Id, f32>,
     },
+    /// `value`: the provider's score. Systems that average level indices
+    /// (Jev, Clef, Gemini) report 0-based positions, so it can fall between levels.
     Score {
         value: f32,
+        confidence: Option<f32>,
         probabilities: BTreeMap<Id, f32>,
     },
+    /// A normal answer, not an error: other questions still succeed.
+    Refused,
 }
 
 impl DecisionRequest {

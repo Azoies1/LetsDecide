@@ -1,24 +1,75 @@
 {
   "model": "jev/jev-latest",
-  "config": { "api_key": "k" },
+  "config": {
+    "api_key": "k"
+  },
   "request": {
-    "input": "Great product, arrived late.",
+    "input": "I was charged twice.",
     "questions": {
-      "positive": { "kind": "yesno", "instructions": "Is the review positive?" },
-      "topic": { "kind": "choice", "instructions": "Main topic?", "options": { "shipping": "Delivery", "quality": "Product" } },
-      "urgency": { "kind": "score", "instructions": "How urgent?", "levels": [ { "id": "low", "description": "Can wait" }, { "id": "high", "description": "Act now" } ] }
+      "is_defect": {
+        "kind": "yesno",
+        "instructions": "Is this a billing problem?"
+      },
+      "dept": {
+        "kind": "choice",
+        "instructions": "Which department?",
+        "options": {
+          "billing": "Payments",
+          "shipping": "Delivery"
+        }
+      },
+      "severity": {
+        "kind": "score",
+        "instructions": "How severe?",
+        "levels": [
+          {
+            "id": "low",
+            "description": "Cosmetic"
+          },
+          {
+            "id": "high",
+            "description": "Blocked"
+          }
+        ]
+      }
     }
   },
   "http": {
     "url": "https://api.typesafe.ai/v1/systemone",
-    "headers": [ ["content-type", "application/json"], ["authorization", "Bearer k"] ],
+    "headers": [
+      [
+        "content-type",
+        "application/json"
+      ],
+      [
+        "authorization",
+        "Bearer k"
+      ]
+    ],
     "body": {
       "model": "jev-latest",
-      "state": "Great product, arrived late.",
+      "state": "I was charged twice.",
       "questions": {
-        "positive": { "type": "noul", "prompt": "Is the review positive?" },
-        "topic": { "type": "choice", "prompt": "Main topic?", "criteria": { "shipping": "Delivery", "quality": "Product" } },
-        "urgency": { "type": "score", "prompt": "How urgent?", "levels": [ { "id": "low", "description": "Can wait" }, { "id": "high", "description": "Act now" } ] }
+        "is_defect": {
+          "type": "noul",
+          "instructions": "Is this a billing problem?"
+        },
+        "dept": {
+          "type": "choice",
+          "instructions": "Which department?",
+          "criteria": {
+            "billing": "Payments",
+            "shipping": "Delivery"
+          }
+        },
+        "severity": {
+          "type": "score",
+          "instructions": "How severe?",
+          "criteria": [
+            "Cosmetic",
+            "Blocked"
+          ]
+        }
       }
     }
   },
@@ -26,23 +77,68 @@
     "status": 200,
     "headers": [],
     "body": {
-      "model": "jev-latest-2026-11",
+      "model": "jev-1.13.0",
       "answers": {
-        "positive": { "probability": 0.75 },
-        "topic": { "choice": "shipping", "probabilities": { "shipping": 0.5, "quality": 0.25 } },
-        "urgency": { "value": 0.5, "probabilities": { "low": 0.5, "high": 0.25 } }
+        "is_defect": {
+          "type": "noul",
+          "noul": 0.75,
+          "confidence": 0.75
+        },
+        "dept": {
+          "type": "choice",
+          "choice": "billing",
+          "probabilities": {
+            "billing": 0.75,
+            "shipping": 0.25
+          },
+          "confidence": 0.75
+        },
+        "severity": {
+          "type": "score",
+          "score": 0.75,
+          "probabilities": {
+            "0": 0.25,
+            "1": 0.75
+          },
+          "legend": {
+            "0": "Cosmetic",
+            "1": "Blocked"
+          },
+          "confidence": 0.75
+        }
       },
-      "usage": { "input_tokens": 42 }
+      "usage": {
+        "input_tokens": 42
+      }
     }
   },
   "expected": {
     "ok": {
-      "model": "jev-latest-2026-11",
+      "model": "jev-1.13.0",
       "input_tokens": 42,
       "answers": {
-        "positive": { "kind": "yesno", "probability": 0.75 },
-        "topic": { "kind": "choice", "choice": "shipping", "probabilities": { "shipping": 0.5, "quality": 0.25 } },
-        "urgency": { "kind": "score", "value": 0.5, "probabilities": { "low": 0.5, "high": 0.25 } }
+        "is_defect": {
+          "kind": "yesno",
+          "probability": 0.75
+        },
+        "dept": {
+          "kind": "choice",
+          "choice": "billing",
+          "confidence": 0.75,
+          "probabilities": {
+            "billing": 0.75,
+            "shipping": 0.25
+          }
+        },
+        "severity": {
+          "kind": "score",
+          "value": 0.75,
+          "confidence": 0.75,
+          "probabilities": {
+            "low": 0.25,
+            "high": 0.75
+          }
+        }
       }
     }
   }

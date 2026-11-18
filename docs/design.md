@@ -59,15 +59,22 @@ picks the adapter.
 
 ## Provider mapping
 
-| | Jev | Clef | OpenAI *(planned)* | Gemini *(planned)* |
-|---|---|---|---|---|
-| Shape | System One | System One | own | own |
-| Model | body | URL | body | TBD |
-| Yes/no | `noul` | `noul` | `predicate` | verify |
-| Limits | 64K tokens | 64 questions | 400 questions | 1000 questions |
+Two wire families cover everything:
 
-Jev and Clef are presets of one `SystemOne` adapter; `systemone/<model>` plus a
-`base_url` covers any compatible server.
+| | System One family | OpenAI |
+|---|---|---|
+| Providers | Jev, Clef, Gemini, custom servers | OpenAI |
+| Questions | map keyed by id | ordered array, `name` = id |
+| Yes/no | `type: noul` → `noul` | `type: predicate` → `probability` |
+| Choice | `criteria` map; `choice` + `probabilities` map | `choices` array; `choice` + `probabilities` array |
+| Score | `criteria` array; `score` + index-keyed `probabilities` | `levels` array of labels; `score` + label-keyed `probabilities` |
+| Refusal | Gemini safety block → every question `Refused` | per-question `refusal` |
+| Differences by preset | input is `state` (Jev, Clef) or `input` (Gemini); model in URL (Clef); key as Bearer or `x-goog-api-key` | |
+| Limits | Clef 64, Gemini 1000 questions | 400 questions, 10 levels |
+
+Gemini turned out to be a System One preset, not its own adapter: its real
+wire format matches the family. `systemone/<model>` plus a `base_url` covers
+any compatible server.
 
 ## Decisions made
 
@@ -75,6 +82,10 @@ Jev and Clef are presets of one `SystemOne` adapter; `systemone/<model>` plus a
   later (UniFFI, napi-rs, PyO3, wasm-bindgen). Fallback if too heavy: TypeScript
   + Swift sharing the same JSON fixtures.
 - **`BTreeMap` for questions.** Deterministic output; no extra crate.
+- **Gemini is a System One preset.** The spec expected a separate adapter;
+  the reference showed otherwise.
+- **`Refused` carries no reason.** OpenAI's refusal has none; Gemini blocks the
+  whole input. Add a reason when a provider supplies one.
 - **No capability struct yet.** Limits live in the adapter. Add one when a
   second adapter needs shared validation.
 - **Licence: Apache-2.0** (patent grant).
@@ -83,7 +94,8 @@ Jev and Clef are presets of one `SystemOne` adapter; `systemone/<model>` plus a
 
 Built only when a real need appears.
 
-- **Adapters:** OpenAI (per-question refusals → `Refused` answer), Gemini.
+- **Input kinds:** images, audio, video and PDF (providers differ: OpenAI inline
+  images, Gemini typed blocks and URLs).
 - **Bindings:** generated from `spec/decision.schema.json`.
 - **Middleware** (opt-in, in the host language): retry, fallback with
   capability routing, hedging, split/merge for over-limit requests, calibration
@@ -93,8 +105,8 @@ Built only when a real need appears.
 
 ## Open questions
 
-- Gemini's exact field names (check v1beta reference before M2).
-- Does OpenAI return per-option probabilities for score questions?
+- Jev and Clef field names (assumed to match Gemini's).
+- Gemini's Google-hosted response vs the EvoLink mirror we verified against.
 - Final package name: "Arbiter" is taken on GitHub; `letsdecide` for now.
 - Should a hosted proxy built on this be a later product?
 

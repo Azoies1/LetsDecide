@@ -12,9 +12,10 @@ question types (yes/no, choice, score) but disagree on wire format.
 - **Tiny.** Two dependencies (`serde`, `serde_json`). No async runtime.
 - **Honest.** Provider limits surface as errors, not silent degradation.
 
-> **Status: early (v0.1).** Only the System One adapter exists (Jev, Clef,
-> compatible servers). Its wire format is assumed from the design spec and
-> needs verifying against provider docs. See the [roadmap](#roadmap).
+> **Status: early (v0.2).** Adapters for Jev, Clef, Gemini, OpenAI and any
+> System One compatible server. Wire formats come from public docs; see
+> [Verification status](#verification-status). Image/audio/PDF input is not
+> supported yet. See the [roadmap](#roadmap).
 
 ## Usage
 
@@ -55,7 +56,26 @@ println!("{:?}", decision.answers["positive"]);
 |---|---|---|
 | `jev/<model>` | Jev System One API | `api_key` |
 | `clef/<model>` | Cloudflare Clef | `api_key`, `account_id` |
+| `gemini/gemini-decision-1` | Google Gemini Decisions | `api_key` |
+| `openai/gpt-6-luna` | OpenAI Decisions | `api_key` |
 | `systemone/<model>` | Any System One compatible server | `base_url`, optional `api_key` |
+
+`input` is a string or any JSON value. Providers that only take text get JSON
+serialised to a string.
+
+### Answers
+
+| Question | Answer | Notes |
+|---|---|---|
+| `yesno` | `YesNo { probability }` | P(yes) |
+| `choice` | `Choice { choice, confidence, probabilities }` | keyed by your option ids |
+| `score` | `Score { value, confidence, probabilities }` | `probabilities` keyed by your level ids |
+| any | `Refused` | Provider declined (OpenAI refusal, Gemini safety block). Other answers still succeed |
+
+Numbers are the provider's, never rescaled. `confidence` is `None` when the
+provider sends none. Jev/Clef/Gemini scores are the probability-weighted
+**0-based level index** (e.g. `0.75` between level 0 and 1); OpenAI's `score`
+is passed through as sent.
 
 ### Errors
 
@@ -65,11 +85,21 @@ Keys and request bodies are never included.
 | Code | When | Retryable |
 |---|---|---|
 | `InvalidRequest` | Fails validation (empty questions, bad or duplicate ids, <2 options) or the provider returned 4xx | No |
-| `Unsupported` | Provider can't take this request (e.g. Clef: >64 questions) | No |
+| `Unsupported` | Provider can't take this request (Clef >64 questions, Gemini >1000, OpenAI >400 or >10 score levels) | No |
 | `Auth` | 401 / 403 | No |
 | `RateLimited` | 429; `retry_after_ms` set when the provider sends `Retry-After` | Yes |
 | `ProviderUnavailable` | 5xx | Yes |
 | `BadResponse` | 2xx but the body doesn't parse. Likely an API change | No |
+
+## Verification status
+
+| Provider | Source of the wire format |
+|---|---|
+| OpenAI | OpenAI's API reference |
+| Gemini | A third-party mirror of the reference (EvoLink); host and `x-goog-api-key` header per Google's docs |
+| Jev, Clef | **Assumed** identical to Gemini's shape (same family). Not yet checked against official docs |
+
+Fixtures in `tests/fixtures/` encode these shapes. Corrections welcome.
 
 ## Roadmap
 
@@ -77,7 +107,8 @@ Built in small steps; each lands only when needed. Details in
 [docs/design.md](docs/design.md).
 
 - [x] **M1** Canonical model, sans-IO core, System One adapter, golden fixtures
-- [ ] **M2** OpenAI and Gemini adapters, refusals
+- [x] **M2** OpenAI and Gemini adapters, refusals
+- [ ] Verify Jev/Clef against official docs; image, audio and PDF input
 - [ ] **M3** Bindings (Swift, TypeScript, Python, Kotlin)
 - [ ] **M4** Middleware (retry, fallback, split/merge)
 - [ ] **M5** Evaluation (shadow mode, calibration)

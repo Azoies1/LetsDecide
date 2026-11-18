@@ -1,0 +1,145 @@
+{
+  "model": "gemini/gemini-decision-1",
+  "config": {
+    "api_key": "g"
+  },
+  "request": {
+    "input": "I was charged twice.",
+    "questions": {
+      "is_defect": {
+        "kind": "yesno",
+        "instructions": "Is this a billing problem?"
+      },
+      "dept": {
+        "kind": "choice",
+        "instructions": "Which department?",
+        "options": {
+          "billing": "Payments",
+          "shipping": "Delivery"
+        }
+      },
+      "severity": {
+        "kind": "score",
+        "instructions": "How severe?",
+        "levels": [
+          {
+            "id": "low",
+            "description": "Cosmetic"
+          },
+          {
+            "id": "high",
+            "description": "Blocked"
+          }
+        ]
+      }
+    }
+  },
+  "http": {
+    "url": "https://generativelanguage.googleapis.com/v1beta/decisions",
+    "headers": [
+      [
+        "content-type",
+        "application/json"
+      ],
+      [
+        "x-goog-api-key",
+        "g"
+      ]
+    ],
+    "body": {
+      "model": "gemini-decision-1",
+      "input": "I was charged twice.",
+      "questions": {
+        "is_defect": {
+          "type": "noul",
+          "instructions": "Is this a billing problem?"
+        },
+        "dept": {
+          "type": "choice",
+          "instructions": "Which department?",
+          "criteria": {
+            "billing": "Payments",
+            "shipping": "Delivery"
+          }
+        },
+        "severity": {
+          "type": "score",
+          "instructions": "How severe?",
+          "criteria": [
+            "Cosmetic",
+            "Blocked"
+          ]
+        }
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": [],
+    "body": {
+      "answers": {
+        "is_defect": {
+          "type": "noul",
+          "noul": 0.75,
+          "confidence": 0.75
+        },
+        "dept": {
+          "type": "choice",
+          "choice": "billing",
+          "probabilities": {
+            "billing": 0.75,
+            "shipping": 0.25
+          },
+          "confidence": 0.75
+        },
+        "severity": {
+          "type": "score",
+          "score": 0.75,
+          "probabilities": {
+            "0": 0.25,
+            "1": 0.75
+          },
+          "legend": {
+            "0": "Cosmetic",
+            "1": "Blocked"
+          },
+          "confidence": 0.75
+        }
+      },
+      "usage": {
+        "total_input_tokens": 324,
+        "total_tokens": 324
+      }
+    }
+  },
+  "expected": {
+    "ok": {
+      "model": null,
+      "input_tokens": 324,
+      "answers": {
+        "is_defect": {
+          "kind": "yesno",
+          "probability": 0.75
+        },
+        "dept": {
+          "kind": "choice",
+          "choice": "billing",
+          "confidence": 0.75,
+          "probabilities": {
+            "billing": 0.75,
+            "shipping": 0.25
+          }
+        },
+        "severity": {
+          "kind": "score",
+          "value": 0.75,
+          "confidence": 0.75,
+          "probabilities": {
+            "low": 0.25,
+            "high": 0.75
+          }
+        }
+      }
+    }
+  }
+}

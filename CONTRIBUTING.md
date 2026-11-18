@@ -15,6 +15,8 @@ CI runs the same three.
 
 ## Adding a provider
 
+0. If the provider speaks the System One shape, add a preset to `src/systemone.rs`
+   instead of a new file.
 1. Add `src/<provider>.rs` implementing `Provider` (`build`, `parse`).
    - Pure: no I/O, no clock, no global state.
    - Validate with `DecisionRequest::validate()`, then check provider limits.
