@@ -28,6 +28,7 @@
       ]
     ],
     "body": {
+      "model": "clef-flash",
       "state": {
         "text": "hi"
       },

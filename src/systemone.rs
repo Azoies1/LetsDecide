@@ -1,8 +1,8 @@
 //! Adapter for the System One wire family: Jev, Clef, Gemini and compatible
 //! servers. One shape, four presets.
 //!
-//! Verified against Gemini's reference (via a third-party mirror). Jev and Clef
-//! are assumed to match it; check their docs.
+//! Verified against: Jev's OpenAPI spec (api.typesafe.ai/openapi.json), Clef's
+//! Cloudflare docs, and a third-party mirror of Gemini's reference.
 
 use crate::provider::{http_error, post};
 use crate::*;
@@ -66,6 +66,14 @@ impl SystemOne {
         })
     }
 
+    /// Score levels: Jev and Clef cap at 10.
+    fn max_levels(&self) -> usize {
+        match self.preset {
+            Preset::Jev | Preset::Clef => 10,
+            _ => usize::MAX,
+        }
+    }
+
     fn max_questions(&self) -> usize {
         match self.preset {
             Preset::Clef => 64,
@@ -78,8 +86,7 @@ impl SystemOne {
 // Request wire types, borrowed so the body is serialised straight to one buffer.
 #[derive(Serialize)]
 struct Body<'a> {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    model: Option<&'a str>,
+    model: &'a str,
     // Jev and Clef call the input `state`; Gemini calls it `input`.
     #[serde(skip_serializing_if = "Option::is_none")]
     state: Option<&'a Value>,
@@ -149,6 +156,14 @@ impl Provider for SystemOne {
                 format!("max {} questions per request", self.max_questions()),
             ));
         }
+        let too_many = req.questions.iter().find_map(|(id, q)| match q {
+            Question::Score { levels, .. } if levels.len() > self.max_levels() => Some(id),
+            _ => None,
+        });
+        if let Some(id) = too_many {
+            let m = format!("question `{id}`: max {} score levels", self.max_levels());
+            return Err(Error::new(ErrorCode::Unsupported, m));
+        }
         let questions = req
             .questions
             .iter()
@@ -175,8 +190,7 @@ impl Provider for SystemOne {
             .collect();
         let gemini = self.preset == Preset::Gemini;
         let body = Body {
-            // Clef puts the model in the URL.
-            model: (self.preset != Preset::Clef).then_some(model),
+            model,
             state: (!gemini).then_some(&req.input),
             // Gemini takes text; JSON must be sent as a string.
             input: gemini.then(|| match &req.input {

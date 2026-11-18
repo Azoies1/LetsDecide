@@ -96,6 +96,32 @@ fn clef_enforces_question_limit() {
 }
 
 #[test]
+fn jev_and_clef_cap_score_levels_at_ten() {
+    let levels: Vec<_> = (0..11)
+        .map(|i| serde_json::json!({ "id": format!("l{i}"), "description": "d" }))
+        .collect();
+    let req: DecisionRequest = serde_json::from_value(serde_json::json!({
+        "input": "x",
+        "questions": { "s": { "kind": "score", "instructions": "?", "levels": levels } }
+    }))
+    .unwrap();
+    let cfg = Config {
+        account_id: Some("a".into()),
+        ..Default::default()
+    };
+    for model in ["jev/jev-latest", "clef/clef"] {
+        let (p, m) = resolve(model).unwrap();
+        assert_eq!(
+            p.build(m, &req, &cfg).unwrap_err().code,
+            ErrorCode::Unsupported,
+            "{model}"
+        );
+    }
+    let (p, m) = resolve("gemini/gemini-decision-1").unwrap();
+    assert!(p.build(m, &req, &cfg).is_ok());
+}
+
+#[test]
 fn unknown_provider_and_bad_ref() {
     assert_eq!(
         resolve("nope/x").err().unwrap().code,

@@ -69,8 +69,8 @@ Two wire families cover everything:
 | Choice | `criteria` map; `choice` + `probabilities` map | `choices` array; `choice` + `probabilities` array |
 | Score | `criteria` array; `score` + index-keyed `probabilities` | `levels` array of labels; `score` + label-keyed `probabilities` |
 | Refusal | Gemini safety block → every question `Refused` | per-question `refusal` |
-| Differences by preset | input is `state` (Jev, Clef) or `input` (Gemini); model in URL (Clef); key as Bearer or `x-goog-api-key` | |
-| Limits | Clef 64, Gemini 1000 questions | 400 questions, 10 levels |
+| Differences by preset | input is `state` (Jev, Clef) or `input` (Gemini); model also in the URL (Clef); key as Bearer or `x-goog-api-key` | |
+| Limits | Clef 64, Gemini 1000 questions; Jev/Clef 10 levels | 400 questions, 10 levels |
 
 Gemini turned out to be a System One preset, not its own adapter: its real
 wire format matches the family. `systemone/<model>` plus a `base_url` covers
@@ -105,8 +105,7 @@ Built only when a real need appears.
 
 ## Open questions
 
-- Jev and Clef field names (assumed to match Gemini's).
-- Gemini's Google-hosted response vs the EvoLink mirror we verified against.
+- Gemini: confirm against Google's official reference (we used a third-party mirror).
 - Final package name: "Arbiter" is taken on GitHub; `letsdecide` for now.
 - Should a hosted proxy built on this be a later product?
 

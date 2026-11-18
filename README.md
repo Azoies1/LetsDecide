@@ -85,7 +85,7 @@ Keys and request bodies are never included.
 | Code | When | Retryable |
 |---|---|---|
 | `InvalidRequest` | Fails validation (empty questions, bad or duplicate ids, <2 options) or the provider returned 4xx | No |
-| `Unsupported` | Provider can't take this request (Clef >64 questions, Gemini >1000, OpenAI >400 or >10 score levels) | No |
+| `Unsupported` | Provider can't take this request (Clef >64 questions, Gemini >1000, OpenAI >400, Jev/Clef/OpenAI >10 score levels) | No |
 | `Auth` | 401 / 403 | No |
 | `RateLimited` | 429; `retry_after_ms` set when the provider sends `Retry-After` | Yes |
 | `ProviderUnavailable` | 5xx | Yes |
@@ -96,8 +96,9 @@ Keys and request bodies are never included.
 | Provider | Source of the wire format |
 |---|---|
 | OpenAI | OpenAI's API reference |
-| Gemini | A third-party mirror of the reference (EvoLink); host and `x-goog-api-key` header per Google's docs |
-| Jev, Clef | **Assumed** identical to Gemini's shape (same family). Not yet checked against official docs |
+| Jev | Jev's official OpenAPI spec (`api.typesafe.ai/openapi.json`) |
+| Clef | Cloudflare's official Clef docs |
+| Gemini | **A third-party mirror** of the reference (EvoLink). Host and `x-goog-api-key` header per Google's docs. Official page not yet read |
 
 Fixtures in `tests/fixtures/` encode these shapes. Corrections welcome.
 
@@ -108,7 +109,7 @@ Built in small steps; each lands only when needed. Details in
 
 - [x] **M1** Canonical model, sans-IO core, System One adapter, golden fixtures
 - [x] **M2** OpenAI and Gemini adapters, refusals
-- [ ] Verify Jev/Clef against official docs; image, audio and PDF input
+- [ ] Verify Gemini against Google's official reference; image, audio and PDF input
 - [ ] **M3** Bindings (Swift, TypeScript, Python, Kotlin)
 - [ ] **M4** Middleware (retry, fallback, split/merge)
 - [ ] **M5** Evaluation (shadow mode, calibration)
