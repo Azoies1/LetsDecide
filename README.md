@@ -98,7 +98,7 @@ Keys and request bodies are never included.
 | OpenAI | OpenAI's API reference |
 | Jev | Jev's official OpenAPI spec (`api.typesafe.ai/openapi.json`) |
 | Clef | Cloudflare's official Clef docs |
-| Gemini | **A third-party mirror** of the reference (EvoLink). Host and `x-goog-api-key` header per Google's docs. Official page not yet read |
+| Gemini | **Secondary sources only**: a third-party mirror (EvoLink) and a Google Doc summary. Both agree on the wire format, host and `x-goog-api-key`. Google's own reference page not yet read |
 
 Fixtures in `tests/fixtures/` encode these shapes. Corrections welcome.
 
