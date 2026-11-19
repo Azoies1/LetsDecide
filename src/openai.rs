@@ -91,6 +91,7 @@ impl Provider for OpenAi {
         cfg: &Config,
     ) -> Result<HttpRequest, Error> {
         req.validate()?;
+        req.require_no_gemini_extras()?;
         let unsupported = |m: String| Err(Error::new(ErrorCode::Unsupported, m));
         if req.questions.len() > MAX_QUESTIONS {
             return unsupported(format!("max {MAX_QUESTIONS} questions per request"));
@@ -120,7 +121,7 @@ impl Provider for OpenAi {
         let mut questions = Vec::with_capacity(req.questions.len());
         for (id, q) in &req.questions {
             questions.push(match q {
-                Question::YesNo { instructions } => Wire::Predicate {
+                Question::YesNo { instructions, .. } => Wire::Predicate {
                     name: id,
                     instructions,
                 },
@@ -231,6 +232,9 @@ impl Provider for OpenAi {
             model: reply.model,
             answers,
             input_tokens: reply.usage.and_then(|u| u.input_tokens),
+            cached_tokens: None,
+            thought_tokens: None,
+            block_reason: None,
         })
     }
 }

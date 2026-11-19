@@ -50,6 +50,7 @@
   "expected": {
     "ok": {
       "model": null,
+      "block_reason": "safety",
       "input_tokens": null,
       "answers": {
         "q": {

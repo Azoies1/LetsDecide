@@ -5,10 +5,20 @@ export interface Media {
   mime_type: string;
   /** Base64, no `data:` prefix. */
   data: string;
+  /** Gemini only. image: `resolution`; audio: `channels`, `sample_rate`, `processing`;
+   * video: `resolution`, `fps`, `start_offset`, `end_offset`, `processing`, `name`;
+   * document: `page_options`, `spreadsheet_options`. */
+  options?: Record<string, Json>;
 }
 
 export type Question =
-  | { kind: "yesno"; instructions: string }
+  | {
+      kind: "yesno";
+      instructions: string;
+      /** What yes / no mean. Gemini only. */
+      yes_description?: string;
+      no_description?: string;
+    }
   | { kind: "choice"; instructions: string; options: Record<string, string> }
   | { kind: "score"; instructions: string; levels: { id: string; description: string }[] };
 
@@ -29,6 +39,10 @@ export interface DecisionResponse {
   model: string | null;
   answers: Record<string, Answer>;
   input_tokens: number | null;
+  cached_tokens?: number;
+  thought_tokens?: number;
+  /** Present when every answer is `refused` and the provider gave a reason. */
+  block_reason?: string;
 }
 
 export interface ClientConfig {

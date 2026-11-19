@@ -25,11 +25,12 @@ inline base64 `media`. Gemini also accepts, as typed content blocks in `input`:
   (`visible_cells`, `sheet_index`, `content_layers`).
   **Open conflict:** the guide page lists only `application/pdf`, the API
   schema lists the wider set. Test against the live API before accepting more.
-- [ ] **Image options:** `resolution` (`low|medium|high|ultra_high`).
+- [x] **Per-media options:** done for all kinds via `Media.options` (Gemini only;
+  keys checked per kind, values passed through unvalidated).
 - [ ] **URI inputs:** Files API URIs and public/signed HTTPS URLs (≤15 MB each).
   Not supported by Gemini: YouTube URLs, `gs://`.
-- [ ] **Size limits to enforce:** inline base64 ≤100 MB per request (≤50 MB for
-  PDF); media-per-request limits are "same as the Interactions API" (page not
+- [x] **Size limits:** inline ≤100 MB per request, ≤50 MB PDF: enforced client-side.
+  Still open: media-per-request limits are "same as the Interactions API" (page not
   read; see <https://aistudio.google.com/docs/interactions-overview>).
 - [ ] **Canonical model design:** `media` covers inline bytes with the kind from
   the MIME (other providers return `Unsupported`). URLs, per-media options and
@@ -44,16 +45,16 @@ inline base64 `media`. Gemini also accepts, as typed content blocks in `input`:
 - [ ] Whether replies carry a top-level `model` (parsed if present).
 - [ ] Exact body and status for rate limits. Docs: spend limits give `429
   RESOURCE_EXHAUSTED`; RPM/TPM/RPD errors are not described.
-- [ ] `usage` has more fields than we read (`input_tokens_by_modality`,
-  `total_cached_tokens`, `total_thought_tokens`, ...); only
-  `total_input_tokens` is surfaced.
-- [ ] Gemini-specific answer fields not surfaced: score `legend`, and
-  `prompt_feedback.block_reason_message` (`Refused` carries no reason).
+- [x] `usage`: cached and thought tokens now surfaced. Still open:
+  `input_tokens_by_modality` and other fields.
+- [x] Block reason surfaced as `DecisionResponse.block_reason`. Still open: score
+  `legend` (response shape not verified).
 - [ ] Question/option id rules: Gemini allows `[A-Za-z0-9_-]` for question keys
   and richer option keys (≤128 chars / 512 bytes); we enforce the stricter
   `[a-z0-9_]{1,64}` everywhere. Revisit if callers need the wider set.
-- [ ] Question `instructions` as a `TextContent` array, and `noul` `criteria`
-  (`true_description` / `false_description`): supported by Gemini, not exposed.
+- [ ] Partly done: question `noul` `criteria`
+  (`yes_description` / `no_description`). Still open: `instructions` as a
+  `TextContent` array.
 - [ ] Context limit 262,144 tokens across input and questions is not checked
   client-side.
 - [ ] Not supported by the API (no work needed, noted for callers): context

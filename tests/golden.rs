@@ -243,3 +243,71 @@ fn gemini_limits() {
         ErrorCode::Unsupported
     );
 }
+
+fn gemini_build(req: serde_json::Value) -> Result<serde_json::Value, Error> {
+    let req: DecisionRequest = serde_json::from_value(req).unwrap();
+    let (p, m) = resolve("gemini/gemini-3-flash").unwrap();
+    let http = p.build(m, &req, &Config::default())?;
+    Ok(serde_json::from_slice(&http.body).unwrap())
+}
+
+#[test]
+fn gemini_media_options_and_noul_criteria() {
+    let body = gemini_build(serde_json::json!({
+        "input": "x",
+        "media": [{ "mime_type": "video/mp4", "data": "AAAA",
+                    "options": { "fps": 2, "start_offset": "1s" } }],
+        "questions": { "q": { "kind": "yesno", "instructions": "?",
+                              "yes_description": "is safe", "no_description": "is not" } }
+    }))
+    .unwrap();
+    assert_eq!(body["input"][1]["fps"], 2);
+    assert_eq!(body["input"][1]["type"], "video");
+    assert_eq!(
+        body["questions"]["q"]["criteria"]["true_description"],
+        "is safe"
+    );
+    assert_eq!(
+        body["questions"]["q"]["criteria"]["false_description"],
+        "is not"
+    );
+}
+
+#[test]
+fn gemini_rejects_wrong_option_for_kind() {
+    let err = gemini_build(serde_json::json!({
+        "input": "x",
+        "media": [{ "mime_type": "image/png", "data": "AAAA", "options": { "fps": 2 } }],
+        "questions": { "q": { "kind": "yesno", "instructions": "?" } }
+    }))
+    .unwrap_err();
+    assert_eq!(err.code, ErrorCode::Unsupported);
+}
+
+#[test]
+fn gemini_enforces_pdf_size() {
+    let big = "A".repeat(70 * 1024 * 1024 * 4 / 3);
+    let err = gemini_build(serde_json::json!({
+        "input": "x",
+        "media": [{ "mime_type": "application/pdf", "data": big }],
+        "questions": { "q": { "kind": "yesno", "instructions": "?" } }
+    }))
+    .unwrap_err();
+    assert_eq!(err.code, ErrorCode::Unsupported);
+}
+
+#[test]
+fn other_providers_reject_gemini_extras() {
+    let req: DecisionRequest = serde_json::from_value(serde_json::json!({
+        "input": "x",
+        "questions": { "q": { "kind": "yesno", "instructions": "?", "yes_description": "y" } }
+    }))
+    .unwrap();
+    for m in ["jev/jev-latest", "openai/gpt-5"] {
+        let (p, m) = resolve(m).unwrap();
+        assert_eq!(
+            p.build(m, &req, &Config::default()).unwrap_err().code,
+            ErrorCode::Unsupported
+        );
+    }
+}

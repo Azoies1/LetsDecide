@@ -25,6 +25,10 @@ pub struct Media {
     pub mime_type: String,
     /// Base64 bytes, no `data:` prefix.
     pub data: String,
+    /// Per-media options, e.g. `resolution`, `fps`, `start_offset`. Gemini
+    /// only; other providers return `Unsupported` when this is set.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub options: BTreeMap<String, Value>,
 }
 
 impl Media {
@@ -53,6 +57,11 @@ impl Media {
 pub enum Question {
     YesNo {
         instructions: String,
+        /// What "yes" and "no" mean. Gemini only; others return `Unsupported`.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        yes_description: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        no_description: Option<String>,
     },
     /// 2..N options, id → description.
     Choice {
@@ -78,6 +87,16 @@ pub struct DecisionResponse {
     pub model: Option<String>,
     pub answers: BTreeMap<Id, Answer>,
     pub input_tokens: Option<u32>,
+    /// Tokens served from cache, when the provider reports them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cached_tokens: Option<u32>,
+    /// Reasoning tokens, when the provider reports them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thought_tokens: Option<u32>,
+    /// Why the input was blocked, when every answer is `Refused` and the
+    /// provider says so.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block_reason: Option<String>,
 }
 
 /// Probabilities are the provider's numbers, never rescaled.
@@ -113,6 +132,22 @@ impl DecisionRequest {
             )),
             None => Ok(()),
         }
+    }
+
+    /// For providers that ignore per-media options and yes/no descriptions.
+    pub(crate) fn require_no_gemini_extras(&self) -> Result<(), Error> {
+        let un = |m: String| Err(Error::new(ErrorCode::Unsupported, m));
+        if self.media.iter().any(|m| !m.options.is_empty()) {
+            return un("per-media options are supported by Gemini only".into());
+        }
+        let described = self.questions.values().any(|q| {
+            matches!(q, Question::YesNo { yes_description, no_description, .. }
+                if yes_description.is_some() || no_description.is_some())
+        });
+        if described {
+            return un("yes/no descriptions are supported by Gemini only".into());
+        }
+        Ok(())
     }
 
     /// Provider-independent checks. Providers add their own limits.
