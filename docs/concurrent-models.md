@@ -167,8 +167,8 @@ Rules that keep this safe:
 
 Each step can ship and be useful on its own.
 
-1. **Keys per provider** (`keys` map, resolvers, env vars; see [Keys](#keys)), falling back to
-   `apiKey`). Small, and needed for everything else. JS and Python.
+1. **Keys per provider**: `keys` map, resolvers and env vars (see [Keys](#keys)), falling back to
+   `apiKey`. Small, and needed for everything else. JS and Python.
 2. **`panel` middleware in JS with `all` and `race`**, `enabled` flags, getter
    config, and abort of losers. No core change yet.
 3. **Core `merge` and `vote` mode** with `quorum`, `on_disagree`, `agreement`.
