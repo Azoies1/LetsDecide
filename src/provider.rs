@@ -23,7 +23,13 @@ pub struct HttpResponse {
 /// Per-client settings. Debug output redacts the key.
 #[derive(Clone, Default, Deserialize)]
 pub struct Config {
+    /// Static key. Required for `gemini/*` (sent as `x-goog-api-key`).
     pub api_key: Option<String>,
+    /// OAuth access token, sent as `Authorization: Bearer`. Used by `clef/*`
+    /// (and the other Bearer providers) in place of `api_key`; it wins when
+    /// both are set. The core never fetches or refreshes tokens: the host does
+    /// that and passes the current token in.
+    pub access_token: Option<String>,
     /// Required for `systemone/*`; overrides the preset default otherwise.
     pub base_url: Option<String>,
     /// Required for `clef/*`.
@@ -34,6 +40,10 @@ impl fmt::Debug for Config {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Config")
             .field("api_key", &self.api_key.as_ref().map(|_| "<redacted>"))
+            .field(
+                "access_token",
+                &self.access_token.as_ref().map(|_| "<redacted>"),
+            )
             .field("base_url", &self.base_url)
             .field("account_id", &self.account_id)
             .finish()
@@ -104,12 +114,15 @@ pub(crate) fn post(
     body: Vec<u8>,
 ) -> HttpRequest {
     let mut headers = vec![("content-type".to_owned(), "application/json".to_owned())];
-    if let Some(key) = &cfg.api_key {
-        let value = if bearer {
-            format!("Bearer {key}")
-        } else {
-            key.clone()
-        };
+    let credential = if bearer {
+        cfg.access_token
+            .as_ref()
+            .or(cfg.api_key.as_ref())
+            .map(|t| format!("Bearer {t}"))
+    } else {
+        cfg.api_key.clone()
+    };
+    if let Some(value) = credential {
         headers.push((key_header.to_owned(), value));
     }
     HttpRequest {

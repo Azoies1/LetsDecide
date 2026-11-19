@@ -57,13 +57,32 @@ println!("{:?}", decision.answers["positive"]);
 | String | Target | Config needed |
 |---|---|---|
 | `jev/<model>` | Jev System One API | `api_key` |
-| `clef/<model>` | Cloudflare Clef | `api_key`, `account_id` |
-| `gemini/gemini-decision-1` | Google Gemini Decisions | `api_key` |
+| `clef/<model>` | Cloudflare Clef | `account_id` plus `access_token` (OAuth) or `api_key` |
+| `gemini/gemini-decision-1` | Google Gemini Decisions | `api_key` (required) |
 | `openai/gpt-6-luna` | OpenAI Decisions | `api_key` |
 | `systemone/<model>` | Any System One compatible server | `base_url`, optional `api_key` |
 
 `input` is a string or any JSON value. Providers that only take text get JSON
 serialised to a string.
+
+### Authentication
+
+- **Gemini:** a static API key (`api_key`), sent as `x-goog-api-key`. Create one in
+  Google AI Studio. A missing key fails with `InvalidRequest` before anything is sent.
+- **Clef:** an OAuth access token (`access_token`, sent as `Authorization: Bearer`)
+  or a plain API token (`api_key`). The token wins if both are set. Clef also needs
+  your Cloudflare `account_id`.
+- **Tokens expire, the core does not refresh them** (it does no I/O). Run your OAuth
+  flow in your app, then in JS pass `accessToken: async () => freshToken()`, in Python
+  `access_token=callable`, or in Rust set `Config.access_token` before each `build`.
+  The function is called on every request, so refresh logic lives in one place.
+- Keys and tokens are redacted from `Debug` output and never appear in errors.
+
+```js
+// Clef with OAuth, Gemini with a key
+const clef = new Client({ accountId: ACCOUNT_ID, accessToken: () => getToken() });
+const gemini = new Client({ apiKey: process.env.GEMINI_API_KEY });
+```
 
 ### Media
 

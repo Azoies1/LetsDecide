@@ -76,6 +76,19 @@ impl SystemOne {
         })
     }
 
+    /// Gemini needs `api_key`; Clef needs `api_key` or an OAuth `access_token`.
+    /// Fails before any request is built instead of surfacing a late 401.
+    fn require_credentials(&self, cfg: &Config) -> Result<(), Error> {
+        let need = |m: &str| Err(Error::new(ErrorCode::InvalidRequest, m));
+        match self.preset {
+            Preset::Gemini if cfg.api_key.is_none() => need("api_key is required for gemini"),
+            Preset::Clef if cfg.api_key.is_none() && cfg.access_token.is_none() => {
+                need("api_key or access_token is required for clef")
+            }
+            _ => Ok(()),
+        }
+    }
+
     /// Documented per-request caps.
     fn limits(&self) -> Limits {
         const NONE: usize = usize::MAX;
@@ -332,6 +345,7 @@ impl Provider for SystemOne {
         let body = serde_json::to_vec(&body)
             .map_err(|e| Error::new(ErrorCode::InvalidRequest, e.to_string()))?;
         let url = self.url(model, cfg)?;
+        self.require_credentials(cfg)?;
         let mut http = match self.preset {
             Preset::Gemini => post(url, "x-goog-api-key", false, cfg, body),
             _ => post(url, "authorization", true, cfg, body),

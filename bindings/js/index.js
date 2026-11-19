@@ -25,13 +25,14 @@ export function initialize(wasm) {
 }
 
 export class Client {
-  /** @param config `{ apiKey, baseUrl, accountId }` @param opts `{ fetch, wasm }` */
+  /**
+   * @param config `{ apiKey, accessToken, baseUrl, accountId }`. `accessToken` is an
+   *   OAuth token (Clef) or a function returning one (sync or async), called on every
+   *   request so you can refresh it.
+   * @param opts `{ fetch, wasm }`
+   */
   constructor(config = {}, { fetch = globalThis.fetch, wasm } = {}) {
-    this.config = JSON.stringify({
-      api_key: config.apiKey,
-      base_url: config.baseUrl,
-      account_id: config.accountId,
-    });
+    this.cfg = config;
     this.fetch = fetch;
     this.wasm = wasm;
   }
@@ -40,7 +41,14 @@ export class Client {
   async decide(model, request, { signal } = {}) {
     await initialize(this.wasm);
     const req = JSON.stringify(request);
-    const http = unwrap(build(model, req, this.config));
+    const { accessToken } = this.cfg;
+    const config = JSON.stringify({
+      api_key: this.cfg.apiKey,
+      access_token: typeof accessToken === "function" ? await accessToken() : accessToken,
+      base_url: this.cfg.baseUrl,
+      account_id: this.cfg.accountId,
+    });
+    const http = unwrap(build(model, req, config));
     const res = await this.fetch(http.url, {
       method: http.method,
       headers: Object.fromEntries(http.headers),
