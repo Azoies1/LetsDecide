@@ -11,9 +11,14 @@ All notable changes to this project are documented here. The format follows
 - Python binding (PyO3, sync and async clients).
 - JS middleware: `retry`, `fallback`.
 - Shared JSON layer in the core (`letsdecide::json`).
+- `ErrorCode::as_str`, the stable wire name of an error code.
+- JS `retry({ maxMs })` caps every wait, including a server `Retry-After`
+  (default 30 s).
+- README and LICENSE in the npm and PyPI packages.
 
 ### Changed
 - **Breaking:** `images` is now `media`.
+- Python clients default to a 60 s timeout (httpx's own default is 5 s).
 
 ## [0.2.0]
 

@@ -7,11 +7,30 @@ doesn't belong yet (YAGNI).
 
 ```sh
 cargo fmt --check
-cargo clippy --all-targets -- -D warnings
+cargo clippy --workspace --all-targets -- -D warnings
 cargo test
+RUSTDOCFLAGS="-D warnings" cargo doc --no-deps   # the README is the crate docs
 ```
 
-CI runs the same three.
+CI runs these plus the two bindings below.
+
+JavaScript (`bindings/js`) needs the WASM target and the `wasm-bindgen-cli`
+version CI pins:
+
+```sh
+rustup target add wasm32-unknown-unknown
+cargo install wasm-bindgen-cli --version 0.2.130 --locked
+cd bindings/js && npm run build && npm test
+```
+
+Python (`bindings/python`):
+
+```sh
+cd bindings/python
+python -m venv .venv && . .venv/bin/activate
+pip install maturin pytest pytest-asyncio httpx
+maturin develop && pytest
+```
 
 ## Adding a provider
 
@@ -54,8 +73,7 @@ publishes, so a failed build never leaves a half-published release.
 3. Merge, then `git tag v<version> && git push origin v<version>`. The tag must
    match all five versions or the release stops before building.
 
-Publishing is opt-in per registry (see the top of `.github/workflows/release.yml`):
-`CARGO_REGISTRY_TOKEN` and `NPM_TOKEN` repository secrets, and for PyPI the
-repository variable `PUBLISH_PYPI=true` plus a trusted publisher configured on
-pypi.org. A registry with nothing configured is skipped. Published versions
-can't be deleted, only yanked or deprecated, so check the release run first.
+Publishing is opt-in per registry and needs credentials set up once. Where to
+create them, the first-release steps and troubleshooting are in
+[docs/releasing.md](docs/releasing.md). A published version number can't be reused (a
+bad release can only be yanked or deprecated), so check the release run first.

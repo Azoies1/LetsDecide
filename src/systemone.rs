@@ -4,8 +4,8 @@
 //! Verified against: Jev's OpenAPI spec (api.typesafe.ai/openapi.json), Clef's
 //! Cloudflare docs, and Google's official Gemini Decisions pages (read
 //! 2026-11-19):
-//! - https://aistudio.google.com/api-reference/decisions/create-decision
-//! - https://aistudio.google.com/docs/decisions-api
+//! - <https://aistudio.google.com/api-reference/decisions/create-decision>
+//! - <https://aistudio.google.com/docs/decisions-api>
 //!
 //! Still unverified for Gemini: whether replies carry a top-level `model`
 //! (parsed if present), and which of the two documented safety-block shapes

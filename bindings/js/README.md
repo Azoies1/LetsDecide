@@ -1,7 +1,7 @@
 # letsdecide (JavaScript / TypeScript)
 
 One request shape for every decision API (Jev, Clef, OpenAI, Gemini). The core
-is Rust compiled to WebAssembly (146 KB gzipped); it builds the HTTP request
+is Rust compiled to WebAssembly (about 100 KB gzipped); it builds the HTTP request
 and parses the reply, and `fetch` sends it. You call providers directly with
 your own keys. There is no gateway.
 

@@ -79,9 +79,9 @@ any compatible server.
 
 ## Decisions made
 
-- **Rust core.** One codebase for every provider mapping; bindings are generated
-  later (UniFFI, napi-rs, PyO3, wasm-bindgen). Fallback if too heavy: TypeScript
-  + Swift sharing the same JSON fixtures.
+- **Rust core.** One codebase for every provider mapping. Bindings are thin
+  wrappers: wasm-bindgen (JS) and PyO3 (Python); Swift and Kotlin later.
+  Fallback if too heavy: TypeScript + Swift sharing the same JSON fixtures.
 - **`BTreeMap` for questions.** Deterministic output; no extra crate.
 - **Gemini is a System One preset.** The spec expected a separate adapter;
   the reference showed otherwise.
@@ -99,6 +99,9 @@ any compatible server.
   fallback ship; `Client` stays zero-cost without them.
 - **No capability struct yet.** Limits live in the adapter. Add one when a
   second adapter needs shared validation.
+- **Package name: `letsdecide`**, the same on crates.io, npm and PyPI (all three
+  were free on 2026-11-19). `letsdecide-wasm` and `letsdecide-py` are build
+  inputs and stay `publish = false`.
 - **Licence: Apache-2.0** (patent grant).
 
 ## Planned
@@ -108,12 +111,14 @@ The detailed backlog, including unimplemented Gemini features, is in
 
 Built only when a real need appears.
 
-- **Input kinds:** audio, video and documents (PDF, Office, CSV; Gemini only so far, inline up to 100 MB, 50 MB for PDF; no YouTube or `gs://`), and image URLs.
-- **Bindings:** Python, Swift, Kotlin. TypeScript/WASM exists (`bindings/`).
-  Each binding is thin: JSON in, JSON out, and the host sends the request.
-  A shared `spec/decision.schema.json` waits until a second binding needs it.
-- **Middleware** (opt-in, in the host language): retry, fallback with
-  capability routing, hedging, split/merge for over-limit requests, calibration
+- **Input kinds:** URI inputs, per-media options and Office/CSV documents
+  (Gemini only so far; no YouTube or `gs://`). Inline audio, video and PDF are
+  done. See [future-work.md](future-work.md).
+- **Bindings:** Swift, Kotlin. TypeScript/WASM (`bindings/js`) and Python
+  (`bindings/python`) exist. Each binding is thin: JSON in, JSON out, and the
+  host sends the request. A shared `spec/decision.schema.json` is not written.
+- **Middleware** (opt-in, in the host language): retry and fallback exist, for
+  JS only. Planned: hedging, split/merge for over-limit requests, calibration
   (never silent: expose raw and calibrated), shadow, observe hooks.
 - **Extras:** `confidence_source`, cost estimates from `spec/prices.json`,
   `provider_extras` escape hatch, live nightly contract tests.
@@ -125,8 +130,7 @@ Built only when a real need appears.
   handled); a top-level `model` in replies; the 429 body (spend limits give
   `RESOURCE_EXHAUSTED`). `aistudio.google.com/docs/decisions` returned 404, so
   `docs/decisions-api` was used. The two pages also list different document
-  MIME types, which matters once PDF input lands.
-- Final package name: "Arbiter" is taken on GitHub; `letsdecide` for now.
+  MIME types, so only PDF is accepted until the rest is tested against the live API.
 - Should a hosted proxy built on this be a later product?
 
 ## Security

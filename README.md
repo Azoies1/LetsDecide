@@ -116,7 +116,7 @@ Keys and request bodies are never included.
 
 ## JavaScript / TypeScript
 
-The same core compiles to WebAssembly (146 KB gzipped) for Node, browsers and
+The same core compiles to WebAssembly (about 100 KB gzipped) for Node, browsers and
 edge runtimes. The wrapper sends requests with `fetch`.
 
 ```js
@@ -151,7 +151,7 @@ res.attempts; res.fellBackFrom; // see when a fallback happened
 ```
 
 Retry (backoff, `Retry-After`) and fallback (also routes around `Unsupported`)
-are plain `(next) => decide` wrappers. See [bindings/js/MIDDLEWARE.md](bindings/js/MIDDLEWARE.md).
+are plain `(next) => decide` wrappers. See [bindings/js/MIDDLEWARE.md](https://github.com/azoies1/letsdecide/blob/HEAD/bindings/js/MIDDLEWARE.md).
 
 ## Python
 
@@ -162,7 +162,7 @@ res = Client(api_key="...").decide("jev/jev-latest", request)
 ```
 
 Sync `Client` and `AsyncClient`, both over `httpx`. See
-[bindings/python/README.md](bindings/python/README.md).
+[bindings/python/README.md](https://github.com/azoies1/letsdecide/blob/HEAD/bindings/python/README.md).
 
 ## Verification status
 
@@ -178,20 +178,20 @@ Fixtures in `tests/fixtures/` encode these shapes. Corrections welcome.
 ## Roadmap
 
 Built in small steps; each lands only when needed. Details in
-[docs/design.md](docs/design.md).
+[docs/design.md](https://github.com/azoies1/letsdecide/blob/HEAD/docs/design.md).
 
 - [x] **M1** Canonical model, sans-IO core, System One adapter, golden fixtures
 - [x] **M2** OpenAI and Gemini adapters, refusals
 - [x] Verify Gemini against Google's official reference
-- [x] Audio, video and PDF input (Gemini, inline). URLs and per-media options: [docs/future-work.md](docs/future-work.md)
+- [x] Audio, video and PDF input (Gemini, inline). URLs and per-media options: [docs/future-work.md](https://github.com/azoies1/letsdecide/blob/HEAD/docs/future-work.md)
 - [x] **M3** Bindings: TypeScript/WASM, Python. Swift and Kotlin when asked for
 - [x] **M4** Retry and fallback (JS). Next: hedging, split/merge, shadow, calibration, observe
 - [ ] **M5** Evaluation (shadow mode, calibration)
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Adding a provider is one file plus fixtures.
+See [CONTRIBUTING.md](https://github.com/azoies1/letsdecide/blob/HEAD/CONTRIBUTING.md). Adding a provider is one file plus fixtures.
 
 ## Licence
 
-[Apache-2.0](LICENSE)
+[Apache-2.0](https://github.com/azoies1/letsdecide/blob/HEAD/LICENSE)
