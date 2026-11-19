@@ -21,6 +21,20 @@ pub struct Error {
     pub retry_after_ms: Option<u64>,
 }
 
+impl ErrorCode {
+    /// Stable wire name used by the bindings.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::InvalidRequest => "InvalidRequest",
+            Self::Unsupported => "Unsupported",
+            Self::Auth => "Auth",
+            Self::RateLimited => "RateLimited",
+            Self::ProviderUnavailable => "ProviderUnavailable",
+            Self::BadResponse => "BadResponse",
+        }
+    }
+}
+
 impl Error {
     pub fn new(code: ErrorCode, message: impl Into<String>) -> Self {
         Self {

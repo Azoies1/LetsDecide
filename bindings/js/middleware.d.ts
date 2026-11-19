@@ -17,6 +17,8 @@ export function compose(client: Pick<Client, "decide">, ...middleware: Middlewar
 export function retry(options?: {
   maxAttempts?: number;
   baseMs?: number;
+  /** Longest wait, including a server `Retry-After`. Default 30000. */
+  maxMs?: number;
   /** Injectable for tests. Should reject when `signal` aborts. */
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
 }): Middleware;

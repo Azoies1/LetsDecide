@@ -75,20 +75,30 @@ impl SystemOne {
         })
     }
 
-    /// Score levels: Jev and Clef cap at 10; Gemini allows 2-255.
-    fn max_levels(&self) -> usize {
+    /// Documented per-request caps.
+    fn limits(&self) -> Limits {
+        const NONE: usize = usize::MAX;
         match self.preset {
-            Preset::Jev | Preset::Clef => 10,
-            Preset::Gemini => 255,
-            _ => usize::MAX,
-        }
-    }
-
-    /// Choice options: Gemini allows 2-255.
-    fn max_options(&self) -> usize {
-        match self.preset {
-            Preset::Gemini => 255,
-            _ => usize::MAX,
+            Preset::Jev => Limits {
+                questions: NONE,
+                options: NONE,
+                levels: 10,
+            },
+            Preset::Clef => Limits {
+                questions: 64,
+                options: NONE,
+                levels: 10,
+            },
+            Preset::Gemini => Limits {
+                questions: 1000,
+                options: 255,
+                levels: 255,
+            },
+            Preset::Custom => Limits {
+                questions: NONE,
+                options: NONE,
+                levels: NONE,
+            },
         }
     }
 
@@ -100,9 +110,9 @@ impl SystemOne {
         header: &mut Option<(String, String)>,
     ) -> Result<(), Error> {
         let unsupported = |m: &str| Err(Error::new(ErrorCode::Unsupported, m));
-        let imgs = &req.media;
+        let media = &req.media;
         if self.preset == Preset::Gemini
-            && imgs
+            && media
                 .iter()
                 .any(|m| m.is_image() && !GEMINI_IMAGE_MIME.contains(&m.mime_type.as_str()))
         {
@@ -120,11 +130,11 @@ impl SystemOne {
                     Value::String(_) => req.input.clone(),
                     other => Value::String(other.to_string()),
                 };
-                body.input = Some(if imgs.is_empty() {
+                body.input = Some(if media.is_empty() {
                     text
                 } else {
                     let mut blocks = vec![json!({ "type": "text", "text": text })];
-                    for m in imgs {
+                    for m in media {
                         let Some(kind) = m.kind() else {
                             return unsupported(&format!("unsupported media `{}`", m.mime_type));
                         };
@@ -136,10 +146,10 @@ impl SystemOne {
                 });
             }
             Preset::Clef => {
-                if imgs.len() > 4 {
+                if media.len() > 4 {
                     return unsupported("Clef takes at most 4 images");
                 }
-                if imgs.iter().any(|i| {
+                if media.iter().any(|i| {
                     !matches!(
                         i.mime_type.as_str(),
                         "image/png" | "image/jpeg" | "image/webp"
@@ -147,12 +157,12 @@ impl SystemOne {
                 }) {
                     return unsupported("Clef images must be PNG, JPEG or WebP");
                 }
-                body.images = imgs.iter().map(Media::data_url).collect();
+                body.images = media.iter().map(Media::data_url).collect();
             }
-            Preset::Jev if !imgs.is_empty() => {
+            Preset::Jev if !media.is_empty() => {
                 // Placeholders in `state` are swapped for the assets server-side.
                 let mut refs = vec![];
-                for (n, img) in imgs.iter().enumerate() {
+                for (n, img) in media.iter().enumerate() {
                     let format = match img.mime_type.as_str() {
                         "image/png" => "png",
                         "image/jpeg" => "jpeg",
@@ -175,21 +185,19 @@ impl SystemOne {
                 // Jev gates image requests behind this header.
                 *header = Some(("typesafe-danger-zone-images".into(), "true".into()));
             }
-            Preset::Custom if !imgs.is_empty() => {
+            Preset::Custom if !media.is_empty() => {
                 return unsupported("images are not supported for custom servers")
             }
             _ => {}
         }
         Ok(())
     }
+}
 
-    fn max_questions(&self) -> usize {
-        match self.preset {
-            Preset::Clef => 64,
-            Preset::Gemini => 1000,
-            _ => usize::MAX,
-        }
-    }
+struct Limits {
+    questions: usize,
+    options: usize,
+    levels: usize,
 }
 
 /// Image MIME types Gemini Decisions accepts (decisions-api, "Input").
@@ -286,27 +294,24 @@ impl Provider for SystemOne {
         cfg: &Config,
     ) -> Result<HttpRequest, Error> {
         req.validate()?;
-        if req.questions.len() > self.max_questions() {
-            return Err(Error::new(
-                ErrorCode::Unsupported,
-                format!("max {} questions per request", self.max_questions()),
-            ));
+        let limits = self.limits();
+        let unsupported = |m: String| Err(Error::new(ErrorCode::Unsupported, m));
+        if req.questions.len() > limits.questions {
+            return unsupported(format!("max {} questions per request", limits.questions));
         }
-        let too_many = req.questions.iter().find_map(|(id, q)| match q {
-            Question::Score { levels, .. } if levels.len() > self.max_levels() => Some(id),
-            _ => None,
-        });
-        if let Some(id) = too_many {
-            let m = format!("question `{id}`: max {} score levels", self.max_levels());
-            return Err(Error::new(ErrorCode::Unsupported, m));
-        }
-        let too_many = req.questions.iter().find_map(|(id, q)| match q {
-            Question::Choice { options, .. } if options.len() > self.max_options() => Some(id),
-            _ => None,
-        });
-        if let Some(id) = too_many {
-            let m = format!("question `{id}`: max {} options", self.max_options());
-            return Err(Error::new(ErrorCode::Unsupported, m));
+        for (id, q) in &req.questions {
+            match q {
+                Question::Score { levels, .. } if levels.len() > limits.levels => {
+                    return unsupported(format!(
+                        "question `{id}`: max {} score levels",
+                        limits.levels
+                    ));
+                }
+                Question::Choice { options, .. } if options.len() > limits.options => {
+                    return unsupported(format!("question `{id}`: max {} options", limits.options));
+                }
+                _ => {}
+            }
         }
         let questions = req
             .questions

@@ -25,6 +25,9 @@ def _unwrap(text: str) -> Any:
     return out["ok"]
 
 
+_TIMEOUT = 60  # httpx defaults to 5s; decisions on media take longer
+
+
 def _httpx():
     try:
         import httpx
@@ -61,10 +64,10 @@ class Client(_Base):
 
     def __init__(self, *, client=None, **config):
         super().__init__(**config)
-        self._http = client or _httpx().Client()
+        self._http = client or _httpx().Client(timeout=_TIMEOUT)
 
     def decide(self, model: str, request: dict) -> dict:
-        """`model`: "provider/model". `request`: `{input, questions, images?}`."""
+        """`model`: "provider/model". `request`: `{input, questions, media?}`."""
         body, http = self._build(model, request)
         method, url, kw = _send_args(http)
         return self._parse(model, body, self._http.request(method, url, **kw))
@@ -75,7 +78,7 @@ class AsyncClient(_Base):
 
     def __init__(self, *, client=None, **config):
         super().__init__(**config)
-        self._http = client or _httpx().AsyncClient()
+        self._http = client or _httpx().AsyncClient(timeout=_TIMEOUT)
 
     async def decide(self, model: str, request: dict) -> dict:
         body, http = self._build(model, request)

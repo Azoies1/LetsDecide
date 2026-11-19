@@ -25,7 +25,7 @@ impl From<Error> for ErrorOut {
     fn from(e: Error) -> Self {
         Self {
             retryable: e.retryable(),
-            code: format!("{:?}", e.code),
+            code: e.code.as_str().to_owned(),
             message: e.message,
             status: e.status,
             retry_after_ms: e.retry_after_ms,

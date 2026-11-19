@@ -11,8 +11,8 @@ const defaultSleep = (ms, signal) =>
     signal?.addEventListener("abort", () => (clearTimeout(t), reject(signal.reason)), { once: true });
   });
 
-/** Retries `retryable` errors with jittered exponential backoff, honouring `retryAfterMs`. */
-export function retry({ maxAttempts = 3, baseMs = 200, sleep = defaultSleep } = {}) {
+/** Retries `retryable` errors with jittered exponential backoff, honouring `retryAfterMs` (capped at `maxMs`). */
+export function retry({ maxAttempts = 3, baseMs = 200, maxMs = 30_000, sleep = defaultSleep } = {}) {
   return (next) => async (model, request, opts = {}) => {
     for (let attempts = 1; ; attempts++) {
       opts.signal?.throwIfAborted();
@@ -21,7 +21,7 @@ export function retry({ maxAttempts = 3, baseMs = 200, sleep = defaultSleep } = 
       } catch (e) {
         if (!e.retryable || attempts >= maxAttempts) throw Object.assign(e, { attempts });
         const backoff = baseMs * 2 ** (attempts - 1) * (0.5 + Math.random() / 2);
-        await sleep(e.retryAfterMs ?? backoff, opts.signal);
+        await sleep(Math.min(e.retryAfterMs ?? backoff, maxMs), opts.signal);
       }
     }
   };

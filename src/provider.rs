@@ -86,7 +86,7 @@ pub(crate) fn http_error(res: &HttpResponse) -> Error {
         .iter()
         .find(|(k, _)| k.eq_ignore_ascii_case("retry-after"))
         .and_then(|(_, v)| v.trim().parse::<u64>().ok())
-        .map(|s| s * 1000);
+        .map(|s| s.saturating_mul(1000));
     let message = format!("HTTP {}", res.status);
     Error {
         status: Some(res.status),
