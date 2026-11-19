@@ -70,10 +70,11 @@ Two wire families cover everything:
 | Score | `criteria` array; `score` + index-keyed `probabilities` | `levels` array of labels; `score` + label-keyed `probabilities` |
 | Refusal | Gemini safety block → every question `Refused` | per-question `refusal` |
 | Differences by preset | input is `state` (Jev, Clef) or `input` (Gemini); model also in the URL (Clef); key as Bearer or `x-goog-api-key` | |
-| Limits | Clef 64, Gemini 1000 questions; Jev/Clef 10 levels | 400 questions, 10 levels |
+| Limits | Clef 64, Gemini 1000 questions; Jev/Clef 10 levels, Gemini 255 options or levels | 400 questions, 10 levels |
 
 Gemini (verified against Google's reference) turned out to be a System One preset, not its own adapter: its real
-wire format matches the family. `systemone/<model>` plus a `base_url` covers
+wire format matches the family (confirmed against the official
+`create-decision` and `decisions-api` pages, 2026-11-19). `systemone/<model>` plus a `base_url` covers
 any compatible server.
 
 ## Decisions made
@@ -96,9 +97,12 @@ any compatible server.
 
 ## Planned
 
+The detailed backlog, including unimplemented Gemini features, is in
+[future-work.md](future-work.md).
+
 Built only when a real need appears.
 
-- **Input kinds:** audio, video and PDF (Gemini only so far), and image URLs.
+- **Input kinds:** audio, video and documents (PDF, Office, CSV; Gemini only so far, inline up to 100 MB, 50 MB for PDF; no YouTube or `gs://`), and image URLs.
 - **Bindings:** Python, Swift, Kotlin. TypeScript/WASM exists (`bindings/`).
   Each binding is thin: JSON in, JSON out, and the host sends the request.
   A shared `spec/decision.schema.json` waits until a second binding needs it.
@@ -110,6 +114,12 @@ Built only when a real need appears.
 
 ## Open questions
 
+- Gemini, still unverified: the two official pages disagree on safety blocks
+  (200 + `prompt_feedback.block_reason` vs HTTP 400 + `error.code`; both are
+  handled); a top-level `model` in replies; the 429 body (spend limits give
+  `RESOURCE_EXHAUSTED`). `aistudio.google.com/docs/decisions` returned 404, so
+  `docs/decisions-api` was used. The two pages also list different document
+  MIME types, which matters once PDF input lands.
 - Final package name: "Arbiter" is taken on GitHub; `letsdecide` for now.
 - Should a hosted proxy built on this be a later product?
 

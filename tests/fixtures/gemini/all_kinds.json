@@ -77,7 +77,6 @@
     "status": 200,
     "headers": [],
     "body": {
-      "model": "gemini-decision-1",
       "answers": {
         "is_defect": {
           "type": "noul",
@@ -109,13 +108,14 @@
       },
       "usage": {
         "total_input_tokens": 324,
+        "total_output_tokens": 0,
         "total_tokens": 324
       }
     }
   },
   "expected": {
     "ok": {
-      "model": "gemini-decision-1",
+      "model": null,
       "input_tokens": 324,
       "answers": {
         "is_defect": {

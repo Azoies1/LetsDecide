@@ -182,3 +182,34 @@ fn config_debug_redacts_key() {
     };
     assert!(!format!("{cfg:?}").contains("secret"));
 }
+
+#[test]
+fn gemini_limits() {
+    let cfg = Config::default();
+    let (p, m) = resolve("gemini/gemini-decision-1").unwrap();
+    let opts: serde_json::Map<String, Value> = (0..256)
+        .map(|i| (format!("o{i}"), Value::String("d".into())))
+        .collect();
+    let mk = |q: Value, imgs: Value| -> DecisionRequest {
+        serde_json::from_value(serde_json::json!({
+            "input": "x", "images": imgs, "questions": { "q": q }
+        }))
+        .unwrap()
+    };
+    let choice = mk(
+        serde_json::json!({ "kind": "choice", "instructions": "?", "options": opts }),
+        serde_json::json!([]),
+    );
+    assert_eq!(
+        p.build(m, &choice, &cfg).unwrap_err().code,
+        ErrorCode::Unsupported
+    );
+    let yn = serde_json::json!({ "kind": "yesno", "instructions": "?" });
+    let gif = serde_json::json!([{ "mime_type": "image/gif", "data": "QUJD" }]);
+    let svg = serde_json::json!([{ "mime_type": "image/svg+xml", "data": "QUJD" }]);
+    assert!(p.build(m, &mk(yn.clone(), gif), &cfg).is_ok());
+    assert_eq!(
+        p.build(m, &mk(yn, svg), &cfg).unwrap_err().code,
+        ErrorCode::Unsupported
+    );
+}

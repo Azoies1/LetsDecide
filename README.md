@@ -70,7 +70,7 @@ Inline base64 only: it is the one form every provider accepts.
 
 | Provider | Sent as | Limits |
 |---|---|---|
-| `gemini` | typed `image` blocks | provider's MIME list |
+| `gemini` | typed `image` blocks | PNG, JPEG, WebP, HEIC, HEIF, GIF, BMP, TIFF |
 | `openai` | `input_image` data URLs | none enforced here |
 | `clef` | `images` data URLs | ≤4, PNG/JPEG/WebP |
 | `jev` | `assets` + placeholders in `state`; sends the `TypeSafe-Danger-Zone-Images` header | PNG/JPEG; needs a vision model such as `jev-preview` |
@@ -83,7 +83,7 @@ Inline base64 only: it is the one form every provider accepts.
 | `yesno` | `YesNo { probability }` | P(yes) |
 | `choice` | `Choice { choice, confidence, probabilities }` | keyed by your option ids |
 | `score` | `Score { value, confidence, probabilities }` | `probabilities` keyed by your level ids |
-| any | `Refused` | Provider declined (OpenAI refusal, Gemini safety block). Other answers still succeed |
+| any | `Refused` | Provider declined (OpenAI refusal, Gemini safety block, as `prompt_feedback.block_reason` or HTTP 400 `error.code`). Other answers still succeed |
 
 Numbers are the provider's, never rescaled. `confidence` is `None` when the
 provider sends none. Jev/Clef/Gemini scores are the probability-weighted
@@ -98,7 +98,7 @@ Keys and request bodies are never included.
 | Code | When | Retryable |
 |---|---|---|
 | `InvalidRequest` | Fails validation (empty questions, bad or duplicate ids, <2 options) or the provider returned 4xx | No |
-| `Unsupported` | Provider can't take this request (Clef >64 questions, Gemini >1000, OpenAI >400, Jev/Clef/OpenAI >10 score levels) | No |
+| `Unsupported` | Provider can't take this request (Clef >64 questions, Gemini >1000, OpenAI >400, Jev/Clef/OpenAI >10 score levels, Gemini >255 options or levels, unsupported Gemini image type) | No |
 | `Auth` | 401 / 403 | No |
 | `RateLimited` | 429; `retry_after_ms` set when the provider sends `Retry-After` | Yes |
 | `ProviderUnavailable` | 5xx | Yes |
@@ -136,7 +136,7 @@ Build and test: `cd bindings/js && npm run build && npm test` (needs the
 | OpenAI | OpenAI's API reference |
 | Jev | Jev's official OpenAPI spec (`api.typesafe.ai/openapi.json`) |
 | Clef | Cloudflare's official Clef docs |
-| Gemini | Google's official reference ([ai.google.dev/api/decisions](https://ai.google.dev/api/decisions)) |
+| Gemini | Google's official pages, read 2026-11-19: [create-decision](https://aistudio.google.com/api-reference/decisions/create-decision) and [decisions-api](https://aistudio.google.com/docs/decisions-api). Endpoint, `x-goog-api-key`, request and response shapes, limits and image MIME types match. Unverified: a top-level `model` in replies, which safety-block shape applies when (both handled), and the exact 429 body. Audio, video and document input are documented but not implemented |
 
 Fixtures in `tests/fixtures/` encode these shapes. Corrections welcome.
 
@@ -147,7 +147,8 @@ Built in small steps; each lands only when needed. Details in
 
 - [x] **M1** Canonical model, sans-IO core, System One adapter, golden fixtures
 - [x] **M2** OpenAI and Gemini adapters, refusals
-- [ ] Audio, video and PDF input
+- [x] Verify Gemini against Google's official reference
+- [ ] Audio, video and PDF input (Gemini documents them; not yet in the canonical model). See [docs/future-work.md](docs/future-work.md)
 - [ ] **M3** Bindings: [x] TypeScript/WASM, [ ] Python, [ ] Swift, [ ] Kotlin
 - [ ] **M4** Middleware (retry, fallback, split/merge)
 - [ ] **M5** Evaluation (shadow mode, calibration)
