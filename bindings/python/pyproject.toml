@@ -17,6 +17,8 @@ test = ["pytest", "pytest-asyncio", "httpx>=0.25"]
 [tool.maturin]
 module-name = "letsdecide._core"
 python-source = "."
+# Extension modules must not link libpython; newer maturin refuses otherwise.
+features = ["pyo3/extension-module"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -97,3 +97,37 @@ async def test_async_client():
     with pytest.raises(LetsDecideError) as e:
         await c.decide("jev/jev-latest", REQUEST)
     assert e.value.code == "Auth"
+
+
+def test_config_headers_are_sent_and_replace_same_named_ones():
+    sent = {}
+
+    def handler(req):
+        sent.update(req.headers)
+        return httpx.Response(401, json={})
+
+    c = client(handler, api_key="k", headers={"x-gateway": "g", "Authorization": "Token t"})
+    with pytest.raises(LetsDecideError):
+        c.decide("jev/jev-latest", REQUEST)
+    assert sent["x-gateway"] == "g"
+    assert sent["authorization"] == "Token t"
+
+
+def test_errors_carry_safe_details():
+    def handler(req):
+        pytest.fail("must not send")
+
+    many = {
+        "input": "x",
+        "questions": {f"q{i}": {"kind": "yesno", "instructions": "secret"} for i in range(65)},
+    }
+    with pytest.raises(LetsDecideError) as e:
+        client(handler).decide("clef/clef-flash", many)
+    assert e.value.code == "Unsupported"
+    assert e.value.details == {
+        "reason": "too_many_questions",
+        "provider": "clef",
+        "limit": 64,
+        "actual": 65,
+    }
+    assert "secret" not in str(e.value)

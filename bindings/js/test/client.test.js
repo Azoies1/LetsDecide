@@ -72,3 +72,32 @@ test("invalid requests fail before any network call", async () => {
   const bad = { input: "x", questions: { "Bad-Id": { kind: "yesno", instructions: "?" } } };
   await assert.rejects(client.decide("jev/jev-latest", bad), { code: "InvalidRequest" });
 });
+
+test("config headers are sent and replace same-named ones", async () => {
+  let sent;
+  const fetch = async (url, init) => {
+    sent = init.headers;
+    return reply(401, {})();
+  };
+  const client = new Client(
+    { apiKey: "k", headers: { "x-gateway": "g", Authorization: "Token t" } },
+    { fetch, wasm },
+  );
+  await assert.rejects(client.decide("jev/jev-latest", request), { code: "Auth" });
+  assert.equal(sent["x-gateway"], "g");
+  assert.equal(sent.Authorization, "Token t");
+  assert.equal(sent.authorization, undefined);
+});
+
+test("errors carry safe details", async () => {
+  const fetch = async () => assert.fail("must not send");
+  const client = new Client({}, { fetch, wasm });
+  const tooMany = { input: "x", questions: Object.fromEntries(
+    Array.from({ length: 65 }, (_, i) => [`q${i}`, { kind: "yesno", instructions: "secret" }])) };
+  await assert.rejects(client.decide("clef/clef-flash", tooMany), (e) => {
+    assert.equal(e.code, "Unsupported");
+    assert.deepEqual(e.details, { reason: "too_many_questions", provider: "clef", limit: 64, actual: 65 });
+    assert.ok(!e.message.includes("secret"));
+    return true;
+  });
+});

@@ -1,13 +1,15 @@
 import init, { build, parse } from "./pkg/letsdecide_wasm.js";
 
 export class LetsDecideError extends Error {
-  constructor({ code, message, status, retry_after_ms, retryable }) {
+  constructor({ code, message, status, retry_after_ms, retryable, details }) {
     super(message);
     this.name = "LetsDecideError";
     this.code = code;
     this.status = status ?? undefined;
     this.retryAfterMs = retry_after_ms ?? undefined;
     this.retryable = retryable;
+    // Safe to log: names, ids, counts, MIME types. Never keys or content.
+    this.details = details ?? undefined;
   }
 }
 
@@ -25,12 +27,15 @@ export function initialize(wasm) {
 }
 
 export class Client {
-  /** @param config `{ apiKey, baseUrl, accountId }` @param opts `{ fetch, wasm }` */
+  /** @param config `{ apiKey, baseUrl, accountId, headers, options }` @param opts `{ fetch, wasm }` */
   constructor(config = {}, { fetch = globalThis.fetch, wasm } = {}) {
+    const headers = config.headers ?? [];
     this.config = JSON.stringify({
       api_key: config.apiKey,
       base_url: config.baseUrl,
       account_id: config.accountId,
+      headers: Array.isArray(headers) ? headers : Object.entries(headers),
+      options: config.options ?? {},
     });
     this.fetch = fetch;
     this.wasm = wasm;

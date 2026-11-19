@@ -12,7 +12,8 @@
 //! (200 + `prompt_feedback.block_reason`, or HTTP 400 + `error.code`) applies
 //! when. Both are handled.
 
-use crate::provider::{http_error, post};
+use crate::error::safe_serde_message;
+use crate::provider::post;
 use crate::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -75,29 +76,36 @@ impl SystemOne {
         })
     }
 
-    /// Documented per-request caps.
-    fn limits(&self) -> Limits {
-        const NONE: usize = usize::MAX;
+    /// Documented per-request caps and accepted media.
+    fn caps(&self) -> Capabilities {
+        let mime = |l: &[&str]| l.iter().map(|m| (*m).to_owned()).collect();
         match self.preset {
-            Preset::Jev => Limits {
-                questions: NONE,
-                options: NONE,
-                levels: 10,
+            Preset::Jev => Capabilities {
+                max_levels: Some(10),
+                media: mime(&["image/png", "image/jpeg"]),
+                ..Default::default()
             },
-            Preset::Clef => Limits {
-                questions: 64,
-                options: NONE,
-                levels: 10,
+            Preset::Clef => Capabilities {
+                max_questions: Some(64),
+                max_levels: Some(10),
+                max_media: Some(4),
+                media: mime(&["image/png", "image/jpeg", "image/webp"]),
+                ..Default::default()
             },
-            Preset::Gemini => Limits {
-                questions: 1000,
-                options: 255,
-                levels: 255,
-            },
-            Preset::Custom => Limits {
-                questions: NONE,
-                options: NONE,
-                levels: NONE,
+            Preset::Gemini => {
+                let mut media: Vec<String> = mime(&GEMINI_IMAGE_MIME);
+                media.extend(mime(&["audio/*", "video/*", "application/pdf"]));
+                Capabilities {
+                    max_questions: Some(1000),
+                    max_options: Some(255),
+                    max_levels: Some(255),
+                    media,
+                    ..Default::default()
+                }
+            }
+            Preset::Custom => Capabilities {
+                locality: Locality::Network,
+                ..Default::default()
             },
         }
     }
@@ -109,19 +117,10 @@ impl SystemOne {
         body: &mut Body<'a>,
         header: &mut Option<(String, String)>,
     ) -> Result<(), Error> {
+        // Media types and counts were checked against `caps()` already.
         let unsupported = |m: &str| Err(Error::new(ErrorCode::Unsupported, m));
         let media = &req.media;
-        if self.preset == Preset::Gemini
-            && media
-                .iter()
-                .any(|m| m.is_image() && !GEMINI_IMAGE_MIME.contains(&m.mime_type.as_str()))
-        {
-            return unsupported("Gemini does not accept this image MIME type");
-        }
         body.state = Some(Cow::Borrowed(&req.input));
-        if self.preset != Preset::Gemini {
-            req.require_images_only()?;
-        }
         match self.preset {
             // Typed blocks; text-only input stays a plain string. JSON goes as text.
             Preset::Gemini => {
@@ -145,20 +144,7 @@ impl SystemOne {
                     Value::Array(blocks)
                 });
             }
-            Preset::Clef => {
-                if media.len() > 4 {
-                    return unsupported("Clef takes at most 4 images");
-                }
-                if media.iter().any(|i| {
-                    !matches!(
-                        i.mime_type.as_str(),
-                        "image/png" | "image/jpeg" | "image/webp"
-                    )
-                }) {
-                    return unsupported("Clef images must be PNG, JPEG or WebP");
-                }
-                body.images = media.iter().map(Media::data_url).collect();
-            }
+            Preset::Clef => body.images = media.iter().map(Media::data_url).collect(),
             Preset::Jev if !media.is_empty() => {
                 // Placeholders in `state` are swapped for the assets server-side.
                 let mut refs = vec![];
@@ -185,19 +171,10 @@ impl SystemOne {
                 // Jev gates image requests behind this header.
                 *header = Some(("typesafe-danger-zone-images".into(), "true".into()));
             }
-            Preset::Custom if !media.is_empty() => {
-                return unsupported("images are not supported for custom servers")
-            }
-            _ => {}
+            Preset::Jev | Preset::Custom => {}
         }
         Ok(())
     }
-}
-
-struct Limits {
-    questions: usize,
-    options: usize,
-    levels: usize,
 }
 
 /// Image MIME types Gemini Decisions accepts (decisions-api, "Input").
@@ -287,32 +264,17 @@ struct RawAnswer {
 }
 
 impl Provider for SystemOne {
+    fn capabilities(&self, _model: &str) -> Capabilities {
+        self.caps()
+    }
+
     fn build(
         &self,
         model: &str,
         req: &DecisionRequest,
         cfg: &Config,
     ) -> Result<HttpRequest, Error> {
-        req.validate()?;
-        let limits = self.limits();
-        let unsupported = |m: String| Err(Error::new(ErrorCode::Unsupported, m));
-        if req.questions.len() > limits.questions {
-            return unsupported(format!("max {} questions per request", limits.questions));
-        }
-        for (id, q) in &req.questions {
-            match q {
-                Question::Score { levels, .. } if levels.len() > limits.levels => {
-                    return unsupported(format!(
-                        "question `{id}`: max {} score levels",
-                        limits.levels
-                    ));
-                }
-                Question::Choice { options, .. } if options.len() > limits.options => {
-                    return unsupported(format!("question `{id}`: max {} options", limits.options));
-                }
-                _ => {}
-            }
-        }
+        self.caps().check(req)?;
         let questions = req
             .questions
             .iter()
@@ -355,6 +317,7 @@ impl Provider for SystemOne {
             _ => post(url, "authorization", true, cfg, body),
         };
         http.headers.extend(extra_header);
+        apply_headers(&mut http, cfg)?;
         Ok(http)
     }
 
@@ -369,7 +332,8 @@ impl Provider for SystemOne {
             status: Some(res.status),
             ..Error::new(ErrorCode::BadResponse, m)
         };
-        let mut reply: Reply = serde_json::from_slice(&res.body).map_err(|e| bad(e.to_string()))?;
+        let mut reply: Reply = serde_json::from_slice(&res.body)
+            .map_err(|e| bad(safe_serde_message("response body", &e)))?;
         let input_tokens = reply.usage.and_then(|u| u.input_tokens);
 
         // Input blocked by a safety filter: nothing was evaluated.
@@ -412,6 +376,7 @@ impl Provider for SystemOne {
             model: reply.model,
             answers,
             input_tokens,
+            probability_source: ProbabilitySource::Provider,
         })
     }
 }
@@ -430,6 +395,7 @@ fn refused(
             .map(|id| (id.clone(), Answer::Refused))
             .collect(),
         input_tokens,
+        probability_source: ProbabilitySource::Provider,
     }
 }
 

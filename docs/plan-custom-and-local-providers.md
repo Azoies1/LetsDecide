@@ -1,6 +1,7 @@
 # Plan: custom providers and local models
 
-Status: **proposal**. Nothing here is built yet. Read with [design.md](design.md).
+Status: **in progress**. P1 is built; P2 onward are planned. Decisions below
+are recorded in [design.md](design.md); open items in [future-work.md](future-work.md).
 
 ## Goal
 
@@ -340,7 +341,7 @@ change, fixtures, no silent degradation).
 
 | # | Deliverable | Done when |
 |---|---|---|
-| **P1** | Core: `Registry`, `Capabilities` (built-ins migrated from `Limits`), `DecisionResponse::check`, `Config.headers/options`, JSON entry points `validate`/`check`/`classify_http` | Built-ins pass unchanged fixtures; a Rust test registers a custom provider; `check` rejects every malformed-response fixture |
+| **P1** ✅ | Core: `Registry`, `Capabilities` (built-ins migrated from `Limits`), `DecisionResponse::check`, `Config.headers/options`, JSON entry points `validate`/`check`/`classify_http` | Built-ins pass unchanged fixtures; a Rust test registers a custom provider; `check` rejects every malformed-response fixture |
 | **P2** | Host providers: JS and Python accept `providers` (codecs) and `engines`; built-in `mock/` engine; **conformance kit** (`checkProvider(provider, fixtures)`) reusing the golden fixture format; guide `docs/custom-providers.md` | A sample `acme` codec passes the kit in JS and Python; middleware works over it |
 | **P3** | Dialects for `systemone` and `openai` families | Jev, Clef, Gemini presets re-expressed as dialects produce byte-identical fixtures |
 | **P4** | Local scorer in core (`score_plan`/`score_answers`), golden fixtures from recorded log-probs; `letsdecide-serve` sidecar over llama.cpp server and an OpenAI-compatible (vLLM) backend | `systemone/<local-model>` works from JS and Python against the sidecar; scorer fixtures cover all three question kinds and the label limit |

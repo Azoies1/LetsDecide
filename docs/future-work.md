@@ -74,10 +74,27 @@ Later, let a decision do the choosing:
   per question, so the choice is based on their data, not ours. Builds on
   `shadow` and M5.
 
+## Custom providers and local models (M6)
+
+Plan and decisions: [plan-custom-and-local-providers.md](plan-custom-and-local-providers.md).
+
+- [x] **P1** Core: `Registry`, `Capabilities`, `DecisionResponse::check`,
+  error `details`, `probability_source`, `Config.headers/options`, JSON
+  entry points.
+- [ ] **P2** Custom codecs and engines in JS and Python; built-in `mock`
+  engine; conformance kit over the golden fixture format; `ProviderError`
+  wrapping of user exceptions; guide `docs/custom-providers.md`.
+- [ ] **P3** Dialects for the System One and OpenAI families.
+- [ ] **P4** Local label scorer in the core; `letsdecide-serve` sidecar.
+- [ ] **P5** In-process engines (Python, JS); `escalate`, capability-aware
+  `fallback`, `shadow` middleware.
+- [ ] **P6** Swift and Kotlin bindings with engine slots.
+- [ ] Support tiers in the README (Built-in, Community, Custom).
+
 ## Project roadmap (from README)
 
-- [ ] **M3** Bindings (Swift, TypeScript, Python, Kotlin)
-- [ ] **M4** Middleware (retry, fallback, split/merge)
+- [ ] **M3** Bindings (Swift, Kotlin; TypeScript and Python done)
+- [ ] **M4** Middleware (split/merge, hedging; retry and fallback done)
 - [ ] **M5** Evaluation (shadow mode, calibration)
-- [ ] Image URLs as input; `confidence_source`; cost estimates; live nightly
-  contract tests (see "Planned" in `design.md`).
+- [ ] Image URLs as input; cost estimates; live nightly contract tests (see
+  "Planned" in `design.md`).
