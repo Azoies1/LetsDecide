@@ -93,7 +93,7 @@ pub enum Answer {
         probabilities: BTreeMap<Id, f32>,
     },
     /// `value`: the provider's score. Systems that average level indices
-    /// (Jev, Clef, Gemini) report 0-based positions, so it can fall between levels.
+    /// (Jev, Clef, Gemini; see Google's `create-decision` reference) report 0-based positions, so it can fall between levels.
     Score {
         value: f32,
         confidence: Option<f32>,

@@ -2,7 +2,15 @@
 //! servers. One shape, four presets.
 //!
 //! Verified against: Jev's OpenAPI spec (api.typesafe.ai/openapi.json), Clef's
-//! Cloudflare docs, and a third-party mirror of Gemini's reference.
+//! Cloudflare docs, and Google's official Gemini Decisions pages (read
+//! 2026-11-19):
+//! - https://aistudio.google.com/api-reference/decisions/create-decision
+//! - https://aistudio.google.com/docs/decisions-api
+//!
+//! Still unverified for Gemini: whether replies carry a top-level `model`
+//! (parsed if present), and which of the two documented safety-block shapes
+//! (200 + `prompt_feedback.block_reason`, or HTTP 400 + `error.code`) applies
+//! when. Both are handled.
 
 use crate::provider::{http_error, post};
 use crate::*;
@@ -67,10 +75,19 @@ impl SystemOne {
         })
     }
 
-    /// Score levels: Jev and Clef cap at 10.
+    /// Score levels: Jev and Clef cap at 10; Gemini allows 2-255.
     fn max_levels(&self) -> usize {
         match self.preset {
             Preset::Jev | Preset::Clef => 10,
+            Preset::Gemini => 255,
+            _ => usize::MAX,
+        }
+    }
+
+    /// Choice options: Gemini allows 2-255.
+    fn max_options(&self) -> usize {
+        match self.preset {
+            Preset::Gemini => 255,
             _ => usize::MAX,
         }
     }
@@ -84,6 +101,13 @@ impl SystemOne {
     ) -> Result<(), Error> {
         let unsupported = |m: &str| Err(Error::new(ErrorCode::Unsupported, m));
         let imgs = &req.media;
+        if self.preset == Preset::Gemini
+            && imgs
+                .iter()
+                .any(|m| m.is_image() && !GEMINI_IMAGE_MIME.contains(&m.mime_type.as_str()))
+        {
+            return unsupported("Gemini does not accept this image MIME type");
+        }
         body.state = Some(Cow::Borrowed(&req.input));
         if self.preset != Preset::Gemini {
             req.require_images_only()?;
@@ -167,6 +191,27 @@ impl SystemOne {
         }
     }
 }
+
+/// Image MIME types Gemini Decisions accepts (decisions-api, "Input").
+const GEMINI_IMAGE_MIME: [&str; 8] = [
+    "image/png",
+    "image/jpeg",
+    "image/webp",
+    "image/heic",
+    "image/heif",
+    "image/gif",
+    "image/bmp",
+    "image/tiff",
+];
+
+/// `error.code` values that mean the input was blocked (decisions-api, "Request").
+const GEMINI_BLOCK_CODES: [&str; 5] = [
+    "safety",
+    "prohibited_content",
+    "blocklist",
+    "image_safety",
+    "content_blocked",
+];
 
 // Request wire types, borrowed so the body is serialised straight to one buffer.
 #[derive(Serialize)]
@@ -255,6 +300,14 @@ impl Provider for SystemOne {
             let m = format!("question `{id}`: max {} score levels", self.max_levels());
             return Err(Error::new(ErrorCode::Unsupported, m));
         }
+        let too_many = req.questions.iter().find_map(|(id, q)| match q {
+            Question::Choice { options, .. } if options.len() > self.max_options() => Some(id),
+            _ => None,
+        });
+        if let Some(id) = too_many {
+            let m = format!("question `{id}`: max {} options", self.max_options());
+            return Err(Error::new(ErrorCode::Unsupported, m));
+        }
         let questions = req
             .questions
             .iter()
@@ -301,6 +354,9 @@ impl Provider for SystemOne {
     }
 
     fn parse(&self, req: &DecisionRequest, res: &HttpResponse) -> Result<DecisionResponse, Error> {
+        if self.preset == Preset::Gemini && res.status == 400 && blocked_by_error(&res.body) {
+            return Ok(refused(req, None, None));
+        }
         if !(200..300).contains(&res.status) {
             return Err(http_error(res));
         }
@@ -313,16 +369,7 @@ impl Provider for SystemOne {
 
         // Input blocked by a safety filter: nothing was evaluated.
         if reply.prompt_feedback.and_then(|f| f.block_reason).is_some() {
-            let answers = req
-                .questions
-                .keys()
-                .map(|id| (id.clone(), Answer::Refused))
-                .collect();
-            return Ok(DecisionResponse {
-                model: reply.model,
-                answers,
-                input_tokens,
-            });
+            return Ok(refused(req, reply.model, input_tokens));
         }
 
         let mut answers = BTreeMap::new();
@@ -362,4 +409,33 @@ impl Provider for SystemOne {
             input_tokens,
         })
     }
+}
+
+/// Every question refused: the input was blocked, nothing was evaluated.
+fn refused(
+    req: &DecisionRequest,
+    model: Option<String>,
+    input_tokens: Option<u32>,
+) -> DecisionResponse {
+    DecisionResponse {
+        model,
+        answers: req
+            .questions
+            .keys()
+            .map(|id| (id.clone(), Answer::Refused))
+            .collect(),
+        input_tokens,
+    }
+}
+
+/// Gemini's documented HTTP 400 safety shape: `{"error": {"code": "safety", ..}}`.
+fn blocked_by_error(body: &[u8]) -> bool {
+    serde_json::from_slice::<Value>(body)
+        .ok()
+        .and_then(|v| {
+            v["error"]["code"]
+                .as_str()
+                .map(|c| GEMINI_BLOCK_CODES.contains(&c))
+        })
+        .unwrap_or(false)
 }

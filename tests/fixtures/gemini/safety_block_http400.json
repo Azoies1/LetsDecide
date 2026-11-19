@@ -1,0 +1,61 @@
+{
+  "model": "gemini/gemini-decision-1",
+  "config": {
+    "api_key": "g"
+  },
+  "request": {
+    "input": {
+      "a": 1
+    },
+    "questions": {
+      "q": {
+        "kind": "yesno",
+        "instructions": "?"
+      }
+    }
+  },
+  "http": {
+    "url": "https://generativelanguage.googleapis.com/v1beta/decisions",
+    "headers": [
+      [
+        "content-type",
+        "application/json"
+      ],
+      [
+        "x-goog-api-key",
+        "g"
+      ]
+    ],
+    "body": {
+      "model": "gemini-decision-1",
+      "input": "{\"a\":1}",
+      "questions": {
+        "q": {
+          "type": "noul",
+          "instructions": "?"
+        }
+      }
+    }
+  },
+  "response": {
+    "status": 400,
+    "headers": [],
+    "body": {
+      "error": {
+        "code": "safety",
+        "message": "Input blocked"
+      }
+    }
+  },
+  "expected": {
+    "ok": {
+      "model": null,
+      "input_tokens": null,
+      "answers": {
+        "q": {
+          "kind": "refused"
+        }
+      }
+    }
+  }
+}
