@@ -1,0 +1,23 @@
+[build-system]
+requires = ["maturin>=1.5,<2"]
+build-backend = "maturin"
+
+[project]
+name = "letsdecide"
+version = "0.2.0"
+description = "One request shape for every decision API (Jev, Clef, OpenAI, Gemini). Rust core."
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+httpx = ["httpx>=0.25"]
+test = ["pytest", "pytest-asyncio", "httpx>=0.25"]
+
+[tool.maturin]
+module-name = "letsdecide._core"
+python-source = "."
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

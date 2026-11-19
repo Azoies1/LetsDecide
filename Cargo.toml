@@ -10,7 +10,7 @@ keywords = ["decisions", "llm", "adapter", "sans-io"]
 categories = ["api-bindings"]
 
 [workspace]
-members = ["bindings/wasm"]
+members = ["bindings/wasm", "bindings/python"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

@@ -1,6 +1,7 @@
 #![doc = include_str!("../README.md")]
 
 mod error;
+pub mod json;
 mod model;
 mod openai;
 mod provider;

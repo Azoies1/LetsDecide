@@ -1,3 +1,7 @@
 /target
 node_modules
 bindings/js/pkg
+
+__pycache__
+*.so
+.venv
