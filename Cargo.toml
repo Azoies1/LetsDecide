@@ -6,8 +6,9 @@ description = "One request shape for every decision API (Jev, Clef, OpenAI, Gemi
 license = "Apache-2.0"
 repository = "https://github.com/azoies1/letsdecide"
 readme = "README.md"
-keywords = ["decisions", "llm", "adapter", "sans-io"]
+keywords = ["llm", "openai", "gemini", "adapter", "sans-io"]
 categories = ["api-bindings"]
+exclude = ["bindings/", ".github/"]
 
 [workspace]
 members = ["bindings/wasm"]
