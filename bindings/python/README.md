@@ -29,6 +29,22 @@ Async: `AsyncClient(...)` and `await client.decide(...)`. Change the model
 string to change provider. Pass `client=` to control proxies, transport and
 timeouts.
 
+## Middleware (async)
+
+`letsdecide.middleware` wraps `AsyncClient.decide`: `retry`, `fallback`,
+`hedge`, `split`, `shadow`, `calibrate`, `observe`, plus `compare`,
+`fit_isotonic` and `brier_score`. Same behaviour as the JS binding; see
+[MIDDLEWARE.md](../js/MIDDLEWARE.md).
+
+```python
+from letsdecide import AsyncClient
+from letsdecide.middleware import compose, fallback, retry, split
+
+decide = compose(AsyncClient(api_key="..."), split(), fallback(["jev/jev-latest"]), retry())
+out = await decide("clef/clef-flash", request)
+out["attempts"], out.get("fell_back_from"), out.get("parts")
+```
+
 ## Build and test
 
 ```sh

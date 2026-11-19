@@ -2,7 +2,10 @@
 //! (`{"error": ...}`) so they cross any FFI boundary without exceptions;
 //! the host wrapper rethrows them.
 
-use crate::{resolve, Config, DecisionRequest, Error, ErrorCode, HttpResponse};
+use crate::{
+    estimate_cost_usd, resolve, Config, DecisionRequest, DecisionResponse, Error, ErrorCode,
+    HttpResponse,
+};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize)]
@@ -42,6 +45,15 @@ struct HttpOut {
     body: String,
 }
 
+// Serialised directly (not via `Value`) so f32 probabilities keep their short form.
+#[derive(Serialize)]
+struct Parsed {
+    #[serde(flatten)]
+    response: DecisionResponse,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    estimated_cost_usd: Option<f64>,
+}
+
 #[derive(Deserialize)]
 struct HttpIn {
     status: u16,
@@ -77,19 +89,24 @@ pub fn build(model: &str, request: &str, config: &str) -> String {
     })
 }
 
-/// `response`: `{status, headers: [[k, v]], body}`. Returns the canonical response.
+/// `response`: `{status, headers: [[k, v]], body}`. Returns the canonical
+/// response, plus `estimated_cost_usd` when the model's price is known.
 pub fn parse(model: &str, request: &str, response: &str) -> String {
     run(|| {
         let req: DecisionRequest = serde_json::from_str(request).map_err(invalid)?;
         let res: HttpIn = serde_json::from_str(response).map_err(invalid)?;
         let (provider, _) = resolve(model)?;
-        provider.parse(
+        let out = provider.parse(
             &req,
             &HttpResponse {
                 status: res.status,
                 headers: res.headers,
                 body: res.body.into_bytes(),
             },
-        )
+        )?;
+        Ok(Parsed {
+            estimated_cost_usd: out.input_tokens.and_then(|t| estimate_cost_usd(model, t)),
+            response: out,
+        })
     })
 }

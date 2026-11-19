@@ -17,6 +17,11 @@ pub struct DecisionRequest {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub media: Vec<Media>,
     pub questions: BTreeMap<Id, Question>,
+    /// Escape hatch: extra top-level body fields, sent as-is (e.g. a new
+    /// provider option not modelled yet). A key the adapter already sets is
+    /// rejected rather than overwritten.
+    #[serde(default, skip_serializing_if = "serde_json::Map::is_empty")]
+    pub provider_extras: serde_json::Map<String, Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -26,11 +31,12 @@ pub struct Media {
     /// Base64 bytes, no `data:` prefix. Empty when `uri` is used.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub data: String,
-    /// `https://` URL or Files API URI instead of `data`.
+    /// URL instead of `data`: `https://` or a Files API URI on Gemini; a
+    /// public `http(s)://` image URL on OpenAI. Others return `Unsupported`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub uri: Option<String>,
     /// Per-media options (`resolution`, `fps`, ...), passed through.
-    /// `uri` and `options` are Gemini only; others return `Unsupported`.
+    /// Gemini only; others return `Unsupported`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub options: BTreeMap<String, Value>,
 }
@@ -53,6 +59,11 @@ impl Media {
 
     pub(crate) fn data_url(&self) -> String {
         format!("data:{};base64,{}", self.mime_type, self.data)
+    }
+
+    /// The `uri` if set, else a base64 data URL.
+    pub(crate) fn url(&self) -> String {
+        self.uri.clone().unwrap_or_else(|| self.data_url())
     }
 }
 
@@ -119,10 +130,12 @@ pub struct DecisionResponse {
 pub enum Answer {
     /// P(yes).
     YesNo { probability: f32 },
-    /// `confidence`: the provider's own number, if it sends one.
+    /// `confidence`: see `confidence_source`.
     Choice {
         choice: Id,
         confidence: Option<f32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        confidence_source: Option<ConfidenceSource>,
         probabilities: BTreeMap<Id, f32>,
     },
     /// `value`: the provider's score. Systems that average level indices
@@ -130,10 +143,36 @@ pub enum Answer {
     Score {
         value: f32,
         confidence: Option<f32>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        confidence_source: Option<ConfidenceSource>,
         probabilities: BTreeMap<Id, f32>,
     },
     /// A normal answer, not an error: other questions still succeed.
     Refused,
+}
+
+/// Where `confidence` came from. Each provider computes its own number, so
+/// confidences are not comparable across providers either way.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ConfidenceSource {
+    /// Sent by the provider.
+    Provider,
+    /// Not sent; taken from `probabilities`: the chosen option's (choice) or
+    /// the most likely level's (score). Nothing is rescaled.
+    Probabilities,
+}
+
+/// The provider's confidence, or one read off the probabilities.
+pub(crate) fn confidence(
+    provider: Option<f32>,
+    chosen: Option<f32>,
+) -> (Option<f32>, Option<ConfidenceSource>) {
+    match (provider, chosen) {
+        (Some(c), _) => (Some(c), Some(ConfidenceSource::Provider)),
+        (None, Some(p)) => (Some(p), Some(ConfidenceSource::Probabilities)),
+        (None, None) => (None, None),
+    }
 }
 
 impl DecisionRequest {
@@ -148,11 +187,17 @@ impl DecisionRequest {
         }
     }
 
-    /// For providers without Gemini-only features: URIs, media options, yes/no descriptions.
-    pub(crate) fn require_portable(&self) -> Result<(), Error> {
+    /// For providers without Gemini-only features: URIs, media options, yes/no
+    /// descriptions. `image_urls`: the provider takes public image URLs.
+    pub(crate) fn require_portable(&self, image_urls: bool) -> Result<(), Error> {
         let un = |m: String| Err(Error::new(ErrorCode::Unsupported, m));
-        if self.media.iter().any(|m| m.uri.is_some()) {
-            return un("URI media is supported by Gemini only".into());
+        for u in self.media.iter().filter_map(|m| m.uri.as_deref()) {
+            if !image_urls {
+                return un("URI media is supported by Gemini and OpenAI (images) only".into());
+            }
+            if !(u.starts_with("https://") || u.starts_with("http://")) {
+                return un("media `uri` must be a public http(s) URL here".into());
+            }
         }
         if self.media.iter().any(|m| !m.options.is_empty()) {
             return un("per-media options are supported by Gemini only".into());

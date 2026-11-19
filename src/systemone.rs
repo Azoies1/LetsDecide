@@ -14,7 +14,8 @@
 //! Both are handled.
 
 use crate::gemini;
-use crate::provider::{http_error, post};
+use crate::model::confidence;
+use crate::provider::{encode, http_error, post};
 use crate::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -279,7 +280,7 @@ impl Provider for SystemOne {
             req.validate_with(gemini::id_ok)?;
         } else {
             req.validate()?;
-            req.require_portable()?;
+            req.require_portable(false)?;
         }
         let limits = self.limits();
         let unsupported = |m: String| Err(Error::new(ErrorCode::Unsupported, m));
@@ -345,8 +346,7 @@ impl Provider for SystemOne {
         };
         let mut extra_header = None;
         self.attach_input(req, &mut body, &mut extra_header)?;
-        let body = serde_json::to_vec(&body)
-            .map_err(|e| Error::new(ErrorCode::InvalidRequest, e.to_string()))?;
+        let body = encode(&body, req)?;
         let url = self.url(model, cfg)?;
         self.require_credentials(cfg)?;
         let mut http = match self.preset {
@@ -395,23 +395,35 @@ impl Provider for SystemOne {
                 Question::YesNo { .. } => Answer::YesNo {
                     probability: raw.noul.ok_or_else(|| missing("noul"))?,
                 },
-                Question::Choice { .. } => Answer::Choice {
-                    choice: raw.choice.ok_or_else(|| missing("choice"))?,
-                    confidence: raw.confidence,
-                    probabilities: raw.probabilities,
-                },
-                Question::Score { levels, .. } => Answer::Score {
-                    value: raw.score.ok_or_else(|| missing("score"))?,
-                    confidence: raw.confidence,
+                Question::Choice { .. } => {
+                    let choice = raw.choice.ok_or_else(|| missing("choice"))?;
+                    let (confidence, confidence_source) =
+                        confidence(raw.confidence, raw.probabilities.get(&choice).copied());
+                    Answer::Choice {
+                        choice,
+                        confidence,
+                        confidence_source,
+                        probabilities: raw.probabilities,
+                    }
+                }
+                Question::Score { levels, .. } => {
                     // Providers key probabilities by 0-based level index.
-                    probabilities: levels
+                    let probabilities: BTreeMap<Id, f32> = levels
                         .iter()
                         .enumerate()
                         .filter_map(|(i, l)| {
                             Some((l.id.clone(), *raw.probabilities.get(&i.to_string())?))
                         })
-                        .collect(),
-                },
+                        .collect();
+                    let top = probabilities.values().copied().reduce(f32::max);
+                    let (confidence, confidence_source) = confidence(raw.confidence, top);
+                    Answer::Score {
+                        value: raw.score.ok_or_else(|| missing("score"))?,
+                        confidence,
+                        confidence_source,
+                        probabilities,
+                    }
+                }
             };
             answers.insert(id.clone(), answer);
         }

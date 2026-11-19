@@ -465,3 +465,130 @@ fn config_debug_redacts_access_token() {
     };
     assert!(!format!("{cfg:?}").contains("secret-token"));
 }
+
+fn build_json(model: &str, req: serde_json::Value) -> Result<serde_json::Value, Error> {
+    let req: DecisionRequest = serde_json::from_value(req).unwrap();
+    let (p, m) = resolve(model).unwrap();
+    let http = p.build(m, &req, &keyed())?;
+    Ok(serde_json::from_slice(&http.body).unwrap())
+}
+
+#[test]
+fn openai_image_urls_must_be_public_http_images() {
+    for (media, code) in [
+        (
+            serde_json::json!({ "mime_type": "image/png", "uri": "gs://b/o" }),
+            ErrorCode::Unsupported,
+        ),
+        (
+            serde_json::json!({ "mime_type": "application/pdf", "uri": "https://x/a.pdf" }),
+            ErrorCode::Unsupported,
+        ),
+        (
+            serde_json::json!({ "mime_type": "image/png", "uri": "https://x/a.png", "data": "QQ==" }),
+            ErrorCode::InvalidRequest,
+        ),
+    ] {
+        let err = build_json(
+            "openai/gpt-6-luna",
+            serde_json::json!({
+                "input": "x", "media": [media],
+                "questions": { "q": { "kind": "yesno", "instructions": "?" } }
+            }),
+        )
+        .unwrap_err();
+        assert_eq!(err.code, code);
+    }
+    let body = build_json(
+        "openai/gpt-6-luna",
+        serde_json::json!({
+            "input": "x", "media": [{ "mime_type": "image/png", "uri": "http://x/a.png" }],
+            "questions": { "q": { "kind": "yesno", "instructions": "?" } }
+        }),
+    )
+    .unwrap();
+    assert_eq!(
+        body["input"][0]["content"][1]["image_url"],
+        "http://x/a.png"
+    );
+}
+
+#[test]
+fn provider_extras_are_merged_but_never_overwrite() {
+    for model in [
+        "openai/gpt-6-luna",
+        "jev/jev-latest",
+        "gemini/gemini-decision-1",
+    ] {
+        let body = build_json(
+            model,
+            serde_json::json!({
+                "input": "x", "provider_extras": { "service_tier": "flex", "metadata": { "a": 1 } },
+                "questions": { "q": { "kind": "yesno", "instructions": "?" } }
+            }),
+        )
+        .unwrap();
+        assert_eq!(body["service_tier"], "flex", "{model}");
+        assert_eq!(body["metadata"]["a"], 1, "{model}");
+        let err = build_json(
+            model,
+            serde_json::json!({
+                "input": "x", "provider_extras": { "model": "other" },
+                "questions": { "q": { "kind": "yesno", "instructions": "?" } }
+            }),
+        )
+        .unwrap_err();
+        assert_eq!(err.code, ErrorCode::InvalidRequest, "{model}");
+    }
+}
+
+#[test]
+fn confidence_is_read_off_probabilities_when_not_sent() {
+    let req: DecisionRequest = serde_json::from_value(serde_json::json!({
+        "input": "x",
+        "questions": {
+            "c": { "kind": "choice", "instructions": "?", "options": { "a": "A", "b": "B" } },
+            "s": { "kind": "score", "instructions": "?",
+                   "levels": [{ "id": "lo", "description": "l" }, { "id": "hi", "description": "h" }] }
+        }
+    }))
+    .unwrap();
+    let body = serde_json::json!({ "answers": {
+        "c": { "choice": "b", "probabilities": { "a": 0.3, "b": 0.7 } },
+        "s": { "score": 0.6, "probabilities": { "0": 0.4, "1": 0.6 } }
+    }});
+    let (p, _) = resolve("jev/jev-latest").unwrap();
+    let res = p
+        .parse(
+            &req,
+            &HttpResponse {
+                status: 200,
+                headers: vec![],
+                body: serde_json::to_vec(&body).unwrap(),
+            },
+        )
+        .unwrap();
+    let out = serde_json::to_value(&res).unwrap();
+    assert_eq!(out["answers"]["c"]["confidence"], 0.7f32 as f64);
+    assert_eq!(out["answers"]["c"]["confidence_source"], "probabilities");
+    assert_eq!(out["answers"]["s"]["confidence"], 0.6f32 as f64);
+    assert_eq!(out["answers"]["s"]["confidence_source"], "probabilities");
+}
+
+#[test]
+fn cost_estimates_come_from_spec_prices() {
+    let c = estimate_cost_usd("openai/gpt-6-luna", 1_000_000).unwrap();
+    assert!((c - 0.10).abs() < 1e-12);
+    assert!((estimate_cost_usd("clef/clef-flash", 500_000).unwrap() - 0.019).abs() < 1e-12);
+    assert_eq!(estimate_cost_usd("jev/jev-latest", 10), None);
+
+    let req = r#"{"input":"x","questions":{"q":{"kind":"yesno","instructions":"?"}}}"#;
+    let res = r#"{"status":200,"headers":[],"body":"{\"answers\":[{\"type\":\"predicate\",\"probability\":0.5}],\"usage\":{\"input_tokens\":2000}}"}"#;
+    let out: serde_json::Value =
+        serde_json::from_str(&json::parse("openai/gpt-6-luna", req, res)).unwrap();
+    assert!((out["ok"]["estimated_cost_usd"].as_f64().unwrap() - 0.0002).abs() < 1e-12);
+    let res = r#"{"status":200,"headers":[],"body":"{\"answers\":{\"q\":{\"noul\":0.5}},\"usage\":{\"input_tokens\":5}}"}"#;
+    let out: serde_json::Value =
+        serde_json::from_str(&json::parse("jev/jev-latest", req, res)).unwrap();
+    assert!(out["ok"].get("estimated_cost_usd").is_none());
+}

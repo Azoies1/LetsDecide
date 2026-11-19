@@ -6,3 +6,10 @@ __pycache__
 *.so
 .venv
 .env
+bindings/kotlin/build
+bindings/kotlin/.gradle
+bindings/kotlin/.kotlin
+bindings/swift/build
+bindings/swift/.build
+bindings/swift/Sources/LetsDecideFFI
+bindings/swift/LetsDecideFFIFFI.xcframework

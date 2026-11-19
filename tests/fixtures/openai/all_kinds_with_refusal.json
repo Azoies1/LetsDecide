@@ -139,7 +139,8 @@
           "probabilities": {
             "billing": 0.75,
             "shipping": 0.25
-          }
+          },
+          "confidence_source": "provider"
         },
         "is_defect": {
           "kind": "yesno",

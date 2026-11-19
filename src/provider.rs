@@ -105,6 +105,26 @@ pub(crate) fn http_error(res: &HttpResponse) -> Error {
     }
 }
 
+/// Shared by adapters: the JSON body plus `provider_extras`. An extra key the
+/// adapter already sets is an error, never a silent overwrite.
+pub(crate) fn encode<T: Serialize>(body: &T, req: &DecisionRequest) -> Result<Vec<u8>, Error> {
+    let invalid = |m: String| Error::new(ErrorCode::InvalidRequest, m);
+    if req.provider_extras.is_empty() {
+        return serde_json::to_vec(body).map_err(|e| invalid(e.to_string()));
+    }
+    let mut v = serde_json::to_value(body).map_err(|e| invalid(e.to_string()))?;
+    let obj = v.as_object_mut().expect("bodies are objects");
+    for (k, x) in &req.provider_extras {
+        if obj.contains_key(k) {
+            return Err(invalid(format!(
+                "provider_extras: `{k}` is set by the adapter"
+            )));
+        }
+        obj.insert(k.clone(), x.clone());
+    }
+    serde_json::to_vec(&v).map_err(|e| invalid(e.to_string()))
+}
+
 /// Shared by adapters: JSON POST, key as `Bearer` or raw in a custom header.
 pub(crate) fn post(
     url: String,
