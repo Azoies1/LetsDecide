@@ -41,7 +41,7 @@ inline base64 `media`. Gemini also accepts, as typed content blocks in `input`:
   `prompt_feedback.block_reason` (create-decision page) or `HTTP 400` with
   `error.code` (decisions-api page). Both are handled; capture real responses
   as fixtures once an API key is available.
-- [ ] Whether replies carry a top-level `model` (parsed if present).
+- [x] Whether replies carry a top-level `model`: no (live call, 2026-11-19; parsed if present).
 - [ ] Exact body and status for rate limits. Docs: spend limits give `429
   RESOURCE_EXHAUSTED`; RPM/TPM/RPD errors are not described.
 - [ ] `usage` has more fields than we read (`input_tokens_by_modality`,

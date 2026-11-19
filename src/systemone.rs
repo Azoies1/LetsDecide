@@ -7,10 +7,11 @@
 //! - https://aistudio.google.com/api-reference/decisions/create-decision
 //! - https://aistudio.google.com/docs/decisions-api
 //!
-//! Still unverified for Gemini: whether replies carry a top-level `model`
-//! (parsed if present), and which of the two documented safety-block shapes
-//! (200 + `prompt_feedback.block_reason`, or HTTP 400 + `error.code`) applies
-//! when. Both are handled.
+//! Checked live (2026-11-19): Gemini replies carry no top-level `model` (so
+//! `DecisionResponse.model` is `None`; it is still parsed if present). Still
+//! unverified: which of the two documented safety-block shapes (200 +
+//! `prompt_feedback.block_reason`, or HTTP 400 + `error.code`) applies when.
+//! Both are handled.
 
 use crate::provider::{http_error, post};
 use crate::*;

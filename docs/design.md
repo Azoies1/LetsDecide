@@ -120,9 +120,10 @@ Built only when a real need appears.
 
 ## Open questions
 
-- Gemini, still unverified: the two official pages disagree on safety blocks
+- Gemini, still unverified (a live call on 2026-11-19 showed replies carry no
+  top-level `model`): the two official pages disagree on safety blocks
   (200 + `prompt_feedback.block_reason` vs HTTP 400 + `error.code`; both are
-  handled); a top-level `model` in replies; the 429 body (spend limits give
+  handled); the 429 body (spend limits give
   `RESOURCE_EXHAUSTED`). `aistudio.google.com/docs/decisions` returned 404, so
   `docs/decisions-api` was used. The two pages also list different document
   MIME types, which matters once PDF input lands.

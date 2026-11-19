@@ -161,7 +161,7 @@ Sync `Client` and `AsyncClient`, both over `httpx`. See
 | OpenAI | OpenAI's API reference |
 | Jev | Jev's official OpenAPI spec (`api.typesafe.ai/openapi.json`) |
 | Clef | Cloudflare's official Clef docs |
-| Gemini | Google's official pages, read 2026-11-19: [create-decision](https://aistudio.google.com/api-reference/decisions/create-decision) and [decisions-api](https://aistudio.google.com/docs/decisions-api). Endpoint, `x-goog-api-key`, request and response shapes, limits and image MIME types match. Unverified: a top-level `model` in replies, which safety-block shape applies when (both handled), and the exact 429 body. Audio, video and document input are documented but not implemented |
+| Gemini | Google's official pages, read 2026-11-19: [create-decision](https://aistudio.google.com/api-reference/decisions/create-decision) and [decisions-api](https://aistudio.google.com/docs/decisions-api). Endpoint, `x-goog-api-key`, request and response shapes, limits and image MIME types match. Confirmed live (2026-11-19): replies carry no top-level `model`. Unverified: which safety-block shape applies when (both handled), and the exact 429 body. Audio, video and document input are documented but not implemented |
 
 Fixtures in `tests/fixtures/` encode these shapes. Corrections welcome.
 
