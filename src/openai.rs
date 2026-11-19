@@ -95,7 +95,8 @@ impl Provider for OpenAi {
         if req.questions.len() > MAX_QUESTIONS {
             return unsupported(format!("max {MAX_QUESTIONS} questions per request"));
         }
-        let input = match (&req.input, req.images.is_empty()) {
+        req.require_images_only()?;
+        let input = match (&req.input, req.media.is_empty()) {
             (Value::String(_), true) => req.input.clone(),
             (Value::String(_) | Value::Object(_) | Value::Array(_), _) => {
                 let text = match &req.input {
@@ -103,7 +104,7 @@ impl Provider for OpenAi {
                     data => json!({ "type": "input_json", "data": data }),
                 };
                 let images = req
-                    .images
+                    .media
                     .iter()
                     .map(|i| json!({ "type": "input_image", "image_url": i.data_url() }));
                 let parts: Vec<Value> = std::iter::once(text).chain(images).collect();

@@ -1,6 +1,7 @@
 export type Json = string | number | boolean | null | Json[] | { [k: string]: Json };
 
-export interface Image {
+export interface Media {
+  /** `image/*`, `audio/*`, `video/*` or `application/pdf`; non-images: Gemini only. */
   mime_type: string;
   /** Base64, no `data:` prefix. */
   data: string;
@@ -13,7 +14,7 @@ export type Question =
 
 export interface DecisionRequest {
   input: Json;
-  images?: Image[];
+  media?: Media[];
   /** Ids match `[a-z0-9_]{1,64}`. */
   questions: Record<string, Question>;
 }

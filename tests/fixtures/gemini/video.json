@@ -1,0 +1,78 @@
+{
+  "model": "gemini/gemini-decision-1",
+  "config": {
+    "api_key": "g"
+  },
+  "request": {
+    "input": "A clip.",
+    "media": [
+      {
+        "mime_type": "video/mp4",
+        "data": "QUJD"
+      }
+    ],
+    "questions": {
+      "q": {
+        "kind": "yesno",
+        "instructions": "Is it red?"
+      }
+    }
+  },
+  "http": {
+    "url": "https://generativelanguage.googleapis.com/v1beta/decisions",
+    "headers": [
+      [
+        "content-type",
+        "application/json"
+      ],
+      [
+        "x-goog-api-key",
+        "g"
+      ]
+    ],
+    "body": {
+      "model": "gemini-decision-1",
+      "input": [
+        {
+          "type": "text",
+          "text": "A clip."
+        },
+        {
+          "type": "video",
+          "data": "QUJD",
+          "mime_type": "video/mp4"
+        }
+      ],
+      "questions": {
+        "q": {
+          "type": "noul",
+          "instructions": "Is it red?"
+        }
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": [],
+    "body": {
+      "answers": {
+        "q": {
+          "type": "noul",
+          "noul": 0.5
+        }
+      }
+    }
+  },
+  "expected": {
+    "ok": {
+      "model": null,
+      "input_tokens": null,
+      "answers": {
+        "q": {
+          "kind": "yesno",
+          "probability": 0.5
+        }
+      }
+    }
+  }
+}

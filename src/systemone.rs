@@ -75,7 +75,7 @@ impl SystemOne {
         }
     }
 
-    /// Puts input and images where this preset expects them.
+    /// Puts input and media where this preset expects them.
     fn attach_input<'a>(
         &self,
         req: &'a DecisionRequest,
@@ -83,8 +83,11 @@ impl SystemOne {
         header: &mut Option<(String, String)>,
     ) -> Result<(), Error> {
         let unsupported = |m: &str| Err(Error::new(ErrorCode::Unsupported, m));
-        let imgs = &req.images;
+        let imgs = &req.media;
         body.state = Some(Cow::Borrowed(&req.input));
+        if self.preset != Preset::Gemini {
+            req.require_images_only()?;
+        }
         match self.preset {
             // Typed blocks; text-only input stays a plain string. JSON goes as text.
             Preset::Gemini => {
@@ -96,11 +99,16 @@ impl SystemOne {
                 body.input = Some(if imgs.is_empty() {
                     text
                 } else {
-                    let blocks = imgs.iter().map(
-                        |i| json!({ "type": "image", "data": i.data, "mime_type": i.mime_type }),
-                    );
-                    let first = json!({ "type": "text", "text": text });
-                    Value::Array(std::iter::once(first).chain(blocks).collect())
+                    let mut blocks = vec![json!({ "type": "text", "text": text })];
+                    for m in imgs {
+                        let Some(kind) = m.kind() else {
+                            return unsupported(&format!("unsupported media `{}`", m.mime_type));
+                        };
+                        blocks.push(
+                            json!({ "type": kind, "data": m.data, "mime_type": m.mime_type }),
+                        );
+                    }
+                    Value::Array(blocks)
                 });
             }
             Preset::Clef => {
@@ -115,7 +123,7 @@ impl SystemOne {
                 }) {
                     return unsupported("Clef images must be PNG, JPEG or WebP");
                 }
-                body.images = imgs.iter().map(Image::data_url).collect();
+                body.images = imgs.iter().map(Media::data_url).collect();
             }
             Preset::Jev if !imgs.is_empty() => {
                 // Placeholders in `state` are swapped for the assets server-side.

@@ -129,7 +129,7 @@ fn image_limits() {
         i["mime_type"] = mime.into();
         serde_json::from_value(serde_json::json!({
             "input": "x",
-            "images": vec![i; n],
+            "media": vec![i; n],
             "questions": { "q": { "kind": "yesno", "instructions": "?" } }
         }))
         .unwrap()
@@ -160,6 +160,36 @@ fn image_limits() {
         Some(ErrorCode::Unsupported)
     );
     assert_eq!(code("clef/clef", &mk(4, "image/webp")), None);
+}
+
+#[test]
+fn non_image_media_is_gemini_only() {
+    let req: DecisionRequest = serde_json::from_value(serde_json::json!({
+        "input": "x",
+        "media": [{ "mime_type": "audio/mp3", "data": "QUJD" }],
+        "questions": { "q": { "kind": "yesno", "instructions": "?" } }
+    }))
+    .unwrap();
+    let cfg = Config {
+        account_id: Some("a".into()),
+        base_url: Some("http://h".into()),
+        ..Default::default()
+    };
+    for model in [
+        "openai/gpt-6-luna",
+        "clef/clef",
+        "jev/jev-preview",
+        "systemone/m",
+    ] {
+        let (p, m) = resolve(model).unwrap();
+        assert_eq!(
+            p.build(m, &req, &cfg).unwrap_err().code,
+            ErrorCode::Unsupported,
+            "{model}"
+        );
+    }
+    let (p, m) = resolve("gemini/gemini-decision-1").unwrap();
+    assert!(p.build(m, &req, &cfg).is_ok());
 }
 
 #[test]

@@ -5,7 +5,7 @@
   },
   "request": {
     "input": "A photo.",
-    "images": [
+    "media": [
       {
         "mime_type": "image/png",
         "data": "QUJD"

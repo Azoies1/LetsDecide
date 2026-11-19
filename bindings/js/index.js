@@ -36,7 +36,7 @@ export class Client {
     this.wasm = wasm;
   }
 
-  /** `model`: "provider/model". `request`: `{ input, questions, images? }`. */
+  /** `model`: "provider/model". `request`: `{ input, questions, media? }`. */
   async decide(model, request, { signal } = {}) {
     await initialize(this.wasm);
     const req = JSON.stringify(request);
