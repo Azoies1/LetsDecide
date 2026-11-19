@@ -52,10 +52,12 @@ variable or a feature-flag service, and you can change it at runtime without a d
       ],
       "rules": { "quorum": 2, "timeout_ms": 3000, "on_disagree": "flag" }
     }
-  },
-  "keys": { "jev": "...", "gemini": "...", "openai": "..." }
+  }
 }
 ```
+
+Panel config never holds keys: it's meant to live in files and flag
+services. Keys go on the `Client` (see [Keys](#keys)).
 
 - **On/off:** set `enabled: false` on a member. A panel with one enabled member
   behaves exactly like calling that model directly, so concurrency is off.
@@ -117,11 +119,55 @@ Because the shape is unchanged, everything downstream keeps working:
 `compose(client, panel(cfg), retry())` retries **each member** separately, and
 `fallback` can sit inside one member.
 
+## Keys
+
+Most users should never write a key in code. The binding finds it in an
+environment variable named after the provider:
+
+```js
+const client = new Client(); // server runtimes: reads env vars below
+```
+
+| Provider | Variables |
+|---|---|
+| `jev` | `JEV_API_KEY` |
+| `clef` | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` |
+| `gemini` | `GEMINI_API_KEY` |
+| `openai` | `OPENAI_API_KEY` |
+| `systemone` | `SYSTEMONE_API_KEY`, `SYSTEMONE_BASE_URL` |
+
+For secret managers, rotation or short-lived tokens, pass a resolver. It is
+called once per request, and any caching is up to you:
+
+```js
+new Client({ keys: { jev: process.env.JEV_KEY, gemini: () => vault.get("gemini") } });
+```
+
+Each provider's key is looked up in this order:
+
+1. `keys[provider]`
+2. `apiKey`, legacy and single-provider only
+3. The environment variable
+
+Rules that keep this safe:
+
+- **A key only goes to its own provider.** With more than one provider in
+  play, `apiKey` alone is an `InvalidRequest`. A broadcast key would send your
+  Jev key to Google.
+- **A missing key fails before sending**, and the error names the variable to
+  set (never a value).
+- **Env vars are read by the bindings, never by the core.** The core keeps no
+  globals. Browsers and edge runtimes don't read env vars: call through your
+  backend.
+- **Keys are redacted** in `Debug`, `repr`, `toString` and errors, as `Config` already does.
+- A `systemone` member pointing at a second server sets its key through the
+  member's `config` override.
+
 ## Plan
 
 Each step can ship and be useful on its own.
 
-1. **Keys per provider** (`Client({ keys: { jev, gemini } })`, falling back to
+1. **Keys per provider** (`keys` map, resolvers, env vars; see [Keys](#keys)), falling back to
    `apiKey`). Small, and needed for everything else. JS and Python.
 2. **`panel` middleware in JS with `all` and `race`**, `enabled` flags, getter
    config, and abort of losers. No core change yet.
