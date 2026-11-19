@@ -92,42 +92,41 @@ Numbered records live in [adr/](adr/README.md); the list below is the original s
 - **Bindings pass JSON strings.** No per-type codegen: errors come back as
   data (`{error}`) and the wrapper rethrows. Hand-written `.d.ts` for now.
 - **One `media` list, kind from MIME.** Inline `data` is portable. `uri`,
-  `options` and non-image kinds are Gemini-only; other providers return
-  `Unsupported`. Gemini-specific rules live in `src/gemini.rs`.
+  `options` and non-image kinds are Gemini-only, except public image URLs on
+  OpenAI; other providers return `Unsupported`. Gemini-specific rules live in
+  `src/gemini.rs`.
+- **`confidence_source`, not rescaling.** When a provider omits confidence we
+  read it off the probabilities and say so; numbers are never changed.
+- **`provider_extras` cannot overwrite.** It adds body fields the model lacks;
+  replacing what an adapter sets would make the adapter lie.
+- **Prices are data.** `spec/prices.json` holds sourced prices with a date;
+  the core turns tokens into an estimate. A missing price means no estimate.
 - **JSON layer lives in the core** (`src/json.rs`); every binding is a thin
   wrapper that only adds a transport.
-- **Middleware is `(next) => decide`, in the host language.** Retry and
-  fallback ship; `Client` stays zero-cost without them.
+- **Middleware is `(next) => decide`, in the host language.** Retry,
+  fallback, hedge, split, shadow, calibrate and observe ship for JS and
+  (async) Python; `Client` stays zero-cost without them. Calibration adds
+  `calibrated` next to raw values, never in place of them.
+- **Swift and Kotlin through UniFFI.** One crate (`bindings/uniffi`) exports
+  the same JSON pair; each language adds only a client and a transport.
+- **Live tests run nightly, not per push.** They need keys and cost money;
+  golden fixtures cover every push.
 - **No capability struct yet.** Limits live in the adapter. Add one when a
   second adapter needs shared validation.
 - **Licence: Apache-2.0** (patent grant).
 
 ## Planned
 
-The detailed backlog, including unimplemented Gemini features, is in
-[future-work.md](future-work.md).
-
-Built only when a real need appears.
-
-- **Input kinds:** image URLs on providers other than Gemini.
-- **Bindings:** Python, Swift, Kotlin. TypeScript/WASM exists (`bindings/`).
-  Each binding is thin: JSON in, JSON out, and the host sends the request.
-  A shared `spec/decision.schema.json` waits until a second binding needs it.
-- **Middleware** (opt-in, in the host language): retry, fallback with
-  capability routing, hedging, split/merge for over-limit requests, calibration
-  (never silent: expose raw and calibrated), shadow, observe hooks.
-- **Extras:** `confidence_source`, cost estimates from `spec/prices.json`,
-  `provider_extras` escape hatch, live nightly contract tests.
+The backlog, including unverified Gemini behaviour and release steps, is in
+[future-work.md](future-work.md). Built only when a real need appears.
 
 ## Open questions
 
-- Gemini, still unverified (a live call on 2026-11-19 showed replies carry no
-  top-level `model`): the two official pages disagree on safety blocks
-  (200 + `prompt_feedback.block_reason` vs HTTP 400 + `error.code`; both are
-  handled); the 429 body (spend limits give
-  `RESOURCE_EXHAUSTED`). `aistudio.google.com/docs/decisions` returned 404, so
-  `docs/decisions-api` was used. The two pages also list different document
-  MIME types, which matters once PDF input lands.
+- Gemini, still unverified (live calls on 2026-11-19 confirmed the answer
+  shapes, CSV and URI input, and no top-level `model`): the two official pages
+  disagree on safety blocks (200 + `prompt_feedback.block_reason` vs HTTP 400
+  + `error.code`; both are handled); the 429 body (spend limits give
+  `RESOURCE_EXHAUSTED`). Office documents are untested live.
 - Final package name: "Arbiter" is taken on GitHub; `letsdecide` for now.
 - Should a hosted proxy built on this be a later product?
 

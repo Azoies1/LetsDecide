@@ -63,3 +63,4 @@ export class Client {
     return unwrap(parse(model, req, response));
   }
 }
+export * from "./middleware.js";

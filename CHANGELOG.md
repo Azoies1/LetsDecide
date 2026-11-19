@@ -7,6 +7,17 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Kotlin and Swift bindings over UniFFI (`bindings/uniffi`, `bindings/kotlin`, `bindings/swift`).
+- Middleware (JS and async Python): `hedge`, `split`, `shadow` + `compare`,
+  `calibrate` + `fitIsotonic` + `brierScore`, `observe`. Python also gets
+  `retry` and `fallback`.
+- OpenAI takes public http(s) image URLs in `media[].uri`.
+- `confidence_source` on choice and score answers.
+- `provider_extras` on requests.
+- Cost estimates: `estimate_cost_usd`, and `estimated_cost_usd` on binding
+  responses, from `spec/prices.json`.
+- Live contract tests (`pytest -m live`), run nightly in CI.
+- The JS package root now re-exports the middleware.
 - Authentication: OAuth `access_token` for Clef (string, or a function in JS and Python that is called per request so tokens can refresh); Gemini `api_key` is now checked up front. Both fail with `InvalidRequest` before sending if no credential is set.
 - Audio, video and document input for Gemini (`media`, replacing `images`), with `uri` and per-media `options`.
 - Gemini yes/no descriptions and `block_reason` on refused responses.
