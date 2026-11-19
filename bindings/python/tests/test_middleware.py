@@ -288,3 +288,72 @@ async def test_observe_hooks():
     assert seen[0] == ("start", "jev/a") and seen[1][0] == "end" and seen[1][1] == pytest.approx(5)
     assert seen[3] == ("error", "Auth")
 
+
+
+# --- review fixes ---
+
+
+async def test_retry_after_zero_means_now():
+    waits = []
+
+    async def sleep(s):
+        waits.append(s)
+
+    async def impl(model, req, n):
+        if n == 1:
+            raise LetsDecideError("RateLimited", "x", retry_after_ms=0, retryable=True)
+        return await answer_all(model, req)
+
+    await compose(Fake(impl), retry(sleep=sleep))("jev/a", {"questions": qs(1)})
+    assert waits == [0]
+
+
+async def test_hedge_hard_error_waits_for_call_in_flight():
+    async def impl(model, req, n):
+        if n == 2:
+            raise err("InvalidRequest")
+        await asyncio.sleep(0.04)
+        return await answer_all(model, req)
+
+    f = Fake(impl)
+    res = await compose(f, hedge(delay_ms=10, models=["gemini/b", "openai/c"]))("clef/a", {"questions": qs(1)})
+    assert res["model"] == "clef/a" and len(f.calls) == 2
+
+    async def worse(model, req, n):
+        if n == 2:
+            raise err("InvalidRequest")
+        await asyncio.sleep(0.02)
+        raise err("ProviderUnavailable", True)
+
+    with pytest.raises(LetsDecideError) as e:
+        await compose(Fake(worse), hedge(delay_ms=5, models=["gemini/b"]))("clef/a", {"questions": qs(1)})
+    assert e.value.code == "InvalidRequest"
+
+
+async def test_split_merge_and_bad_options():
+    async def impl(_m, req, n):
+        out = {
+            "model": "clef-flash" if n == 1 else "jev-1",
+            "answers": {q: ({"kind": "refused"} if n == 1 else yes(0.5)) for q in req["questions"]},
+            "input_tokens": 1,
+        }
+        if n == 1:
+            out["block_reason"] = "SAFETY"
+        else:
+            out["fell_back_from"] = "clef/clef-flash"
+        return out
+
+    res = await compose(Fake(impl), split(max_questions=1, concurrency=1))("clef/clef-flash", {"questions": qs(2)})
+    assert res["models"] == ["clef-flash", "jev-1"]
+    assert res["fell_back_from"] == "clef/clef-flash"
+    assert "block_reason" not in res
+    with pytest.raises(ValueError):
+        split(concurrency=0)
+    with pytest.raises(ValueError):
+        await compose(Fake(answer_all), split(max_questions=0))("jev/x", {"questions": qs(3)})
+
+
+def test_compare_rounds_like_js():
+    a = {"answers": {"s": {"kind": "score", "value": -2.5}}}
+    b = {"answers": {"s": {"kind": "score", "value": -2.0}}}
+    assert compare(a, b)["questions"]["s"]["agree"]

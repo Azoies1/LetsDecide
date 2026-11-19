@@ -10,6 +10,7 @@ function returning a response dict. `AsyncClient.decide` is the base `next`.
 from __future__ import annotations
 
 import asyncio
+import math
 import random as _random
 import time
 from typing import Any, Awaitable, Callable, Mapping
@@ -61,7 +62,8 @@ def retry(*, max_attempts=3, base_ms=200, max_ms=30_000, sleep=asyncio.sleep) ->
                         e.attempts = attempts
                         raise
                     backoff = base_ms * 2 ** (attempts - 1) * (0.5 + _random.random() / 2)
-                    wait = getattr(e, "retry_after_ms", None) or backoff
+                    after = getattr(e, "retry_after_ms", None)
+                    wait = backoff if after is None else after  # 0 means "now"
                     await sleep(min(wait, max_ms) / 1000)
 
         return decide
@@ -104,6 +106,7 @@ def hedge(*, delay_ms=1000, models: list[str] | None = None) -> Middleware:
             chain = [model, *(models or [model])]
             tasks: dict[asyncio.Task, int] = {}
             last: BaseException | None = None
+            hard: BaseException | None = None  # stops new hedges; pending calls may still answer
 
             def launch():
                 i = len(tasks)
@@ -112,11 +115,11 @@ def hedge(*, delay_ms=1000, models: list[str] | None = None) -> Middleware:
             launch()
             try:
                 while True:
-                    more = len(tasks) < len(chain)
+                    more = hard is None and len(tasks) < len(chain)
                     live = [t for t in tasks if not t.done()]
                     if not live:
                         if not more:
-                            raise last  # every call failed
+                            raise hard or last  # every call failed
                         launch()
                         continue
                     timeout = delay_ms / 1000 if more else None
@@ -124,17 +127,20 @@ def hedge(*, delay_ms=1000, models: list[str] | None = None) -> Middleware:
                     if not done:  # too slow: hedge
                         launch()
                         continue
+                    # A success wins even if a failure finished at the same time.
+                    ok = [t for t in done if t.exception() is None]
+                    if ok:
+                        out = dict(ok[0].result())
+                        if tasks[ok[0]]:
+                            out["hedged_from"] = model
+                        return out
                     for t in done:
                         e = t.exception()
-                        if e is None:
-                            out = dict(t.result())
-                            if tasks[t]:
-                                out["hedged_from"] = model
-                            return out
-                        if not _recoverable(e):
-                            raise e
-                        last = e
-                    if len(tasks) < len(chain):  # failed: hedge now, not after the delay
+                        if _recoverable(e):
+                            last = e
+                        elif hard is None:
+                            hard = e
+                    if hard is None and len(tasks) < len(chain):  # failed: hedge now, not after the delay
                         launch()
             finally:
                 for t in tasks:
@@ -156,7 +162,14 @@ def split(*, max_questions: int | Callable[[str], int | None] | None = None, con
         n = max_questions(model) if callable(max_questions) else max_questions
         if n is None:
             n = QUESTION_LIMITS.get(model.split("/")[0])
-        return float("inf") if n is None else n
+        if n is None:
+            return float("inf")
+        if n < 1:
+            raise ValueError("split: max_questions must be at least 1")
+        return int(n)
+
+    if concurrency < 1:
+        raise ValueError("split: concurrency must be at least 1")
 
     def mw(next: Decide) -> Decide:
         async def decide(model, request):
@@ -199,9 +212,17 @@ def _merge(results: list[dict]) -> dict:
     costs = [r.get("estimated_cost_usd") for r in results]
     if None not in costs:
         out["estimated_cost_usd"] = sum(costs)
-    reason = next((r["block_reason"] for r in results if r.get("block_reason")), None)
-    if reason:
-        out["block_reason"] = reason
+    # Parts may be answered by different models (fallback, hedge): say so.
+    models = list(dict.fromkeys(r["model"] for r in results if r.get("model")))
+    if len(models) > 1:
+        out["models"] = models
+    for k in ("fell_back_from", "hedged_from"):
+        v = next((r[k] for r in results if r.get(k)), None)
+        if v:
+            out[k] = v
+    # Blocked means every answer is refused, so only when every part was.
+    if all(r.get("block_reason") for r in results):
+        out["block_reason"] = results[0]["block_reason"]
     if any("attempts" in r for r in results):
         out["attempts"] = sum(r.get("attempts", 1) for r in results)
     return out
@@ -223,6 +244,8 @@ def shadow(*, model: str, on_result: Callable[[dict], Any], sample=1.0, random=_
             except BaseException:
                 if call:
                     call.cancel()
+                    # Read any shadow error so asyncio doesn't log it as unhandled.
+                    call.add_done_callback(lambda t: t.cancelled() or t.exception())
                 raise
             if call:
 
@@ -274,7 +297,7 @@ def compare(a: dict, b: dict) -> dict:
 
 def _round(v: float) -> int:
     # Half up, as in JS `Math.round`, so both bindings agree.
-    return int(v + 0.5) if v >= 0 else -int(-v + 0.5)
+    return math.floor(v + 0.5)
 
 
 def calibrate(calibrators: Calibrator | Mapping[str, Calibrator]) -> Middleware:

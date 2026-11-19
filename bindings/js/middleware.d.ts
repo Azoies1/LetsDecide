@@ -15,6 +15,8 @@ declare module "./index" {
     hedgedFrom?: string;
     /** Number of requests `split` sent. */
     parts?: number;
+    /** Set by `split` when parts were answered by different models. */
+    models?: string[];
   }
 }
 

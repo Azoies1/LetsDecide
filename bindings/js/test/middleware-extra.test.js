@@ -179,3 +179,62 @@ test("observe: hooks see timing, results and errors; hook errors are ignored", a
   await assert.rejects(compose(bad, observe(hooks), retry())("jev/a", {}), { code: "Auth" });
   assert.deepEqual(seen, [["start", "jev/a"], ["end", 5], ["start", "jev/a"], ["error", "Auth"]]);
 });
+
+test("review fixes: split honours a pre-aborted signal and rejects bad options", async () => {
+  const c = fake(async (model, req) => answerAll(model, req));
+  const ac = new AbortController();
+  ac.abort(new Error("gone"));
+  await assert.rejects(compose(c, split())("clef/x", { questions: q(100) }, { signal: ac.signal }), /gone/);
+  assert.equal(c.calls.length, 0);
+  assert.throws(() => split({ concurrency: 0 }), RangeError);
+  await assert.rejects(compose(c, split({ maxQuestions: () => 0 }))("jev/x", { questions: q(3) }), RangeError);
+});
+
+test("review fixes: a hard hedge error waits for the call still in flight", async () => {
+  const c = fake(async (model, req, { signal }, n) => {
+    if (n === 2) throw err("InvalidRequest");
+    await wait(40, signal);
+    return answerAll(model, req);
+  });
+  const res = await compose(c, hedge({ delayMs: 10, models: ["gemini/b", "openai/c"] }))("clef/a", { questions: q(1) });
+  assert.equal(res.model, "clef/a");
+  assert.equal(c.calls.length, 2); // no further hedge after the hard error
+
+  const d = fake(async (model, req, { signal }, n) => {
+    if (n === 2) throw err("InvalidRequest");
+    await wait(20, signal);
+    throw err("ProviderUnavailable", true);
+  });
+  await assert.rejects(compose(d, hedge({ delayMs: 5, models: ["gemini/b"] }))("clef/a", { questions: q(1) }), { code: "InvalidRequest" });
+});
+
+test("review fixes: split merge reports mixed models and only full blocks", async () => {
+  const c = fake(async (_m, req, _o, n) => ({
+    model: n === 1 ? "clef-flash" : "jev-1",
+    fellBackFrom: n === 2 ? "clef/clef-flash" : undefined,
+    answers: Object.fromEntries(Object.keys(req.questions).map((id) => [id, n === 1 ? { kind: "refused" } : yes(0.5)])),
+    input_tokens: 1,
+    block_reason: n === 1 ? "SAFETY" : undefined,
+  }));
+  const res = await compose(c, split({ maxQuestions: 1, concurrency: 1 }))("clef/clef-flash", { questions: q(2) });
+  assert.deepEqual(res.models, ["clef-flash", "jev-1"]);
+  assert.equal(res.fellBackFrom, "clef/clef-flash");
+  assert.equal(res.block_reason, undefined);
+});
+
+test("review fixes: calibrate ignores inherited keys; shadow is aborted when the primary fails", async () => {
+  const c = fake(async () => ({ answers: { constructor: yes(0.8) } }));
+  const res = await compose(c, calibrate({ other: (p) => p }))("jev/a", {});
+  assert.equal(res.answers.constructor.calibrated, undefined);
+
+  const reports = [];
+  const d = fake(async (model, _r, { signal } = {}) => {
+    if (model === "jev/a") throw err("Auth");
+    await wait(1000, signal);
+  });
+  await assert.rejects(compose(d, shadow({ model: "gemini/b", onResult: (r) => reports.push(r) }))("jev/a", {}), { code: "Auth" });
+  const shadowCall = d.calls.find((x) => x.model === "gemini/b");
+  assert.ok(shadowCall.opts.signal.aborted);
+  await wait(5);
+  assert.equal(reports.length, 0);
+});

@@ -126,8 +126,9 @@ overwritten.
 
 The bindings add `estimated_cost_usd` to a response when the model's price is
 in [`spec/prices.json`](spec/prices.json) (OpenAI, Clef, Gemini; Jev publishes
-none). In Rust: `estimate_cost_usd(model, input_tokens)`. It is an estimate:
-regional premiums, long-context multipliers and cache discounts are not applied.
+none). In Rust: `estimate_cost_usd(model, input_tokens)`. It is an estimate of direct
+provider billing: regional premiums, long-context multipliers and cache
+discounts are not applied, and a `base_url` proxy or gateway may bill differently.
 
 ### Errors
 

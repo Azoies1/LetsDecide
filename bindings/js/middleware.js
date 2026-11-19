@@ -57,7 +57,7 @@ export function hedge({ delayMs = 1000, models = [] } = {}) {
     new Promise((resolve, reject) => {
       const chain = [model, ...(models.length ? models : [model])];
       const ctrls = [];
-      let started = 0, pending = 0, done = false, timer;
+      let started = 0, pending = 0, done = false, stopped = false, hard, timer;
       const finish = (settle, value) => {
         if (done) return;
         done = true;
@@ -70,7 +70,7 @@ export function hedge({ delayMs = 1000, models = [] } = {}) {
       if (opts.signal?.aborted) return reject(opts.signal.reason);
       opts.signal?.addEventListener("abort", onAbort, { once: true });
       const launch = () => {
-        if (done || started >= chain.length) return;
+        if (done || stopped || started >= chain.length) return;
         const i = started++;
         pending++;
         const ctrl = new AbortController();
@@ -83,9 +83,14 @@ export function hedge({ delayMs = 1000, models = [] } = {}) {
             (res) => finish(resolve, { ...res, hedgedFrom: i ? model : undefined }),
             (e) => {
               pending--;
-              if (!recoverable(e)) return finish(reject, e);
-              if (started < chain.length) return launch();
-              if (!pending) finish(reject, e);
+              // A hard error stops new hedges, but a call still in flight may yet answer.
+              if (!recoverable(e)) {
+                stopped = true;
+                hard ??= e;
+                clearTimeout(timer);
+              }
+              if (!stopped && started < chain.length) return launch();
+              if (!pending) finish(reject, hard ?? e);
             },
           );
       };
@@ -103,14 +108,20 @@ const QUESTION_LIMITS = { clef: 64, openai: 400, gemini: 1000 };
  * summed: the input is sent (and billed) once per part.
  */
 export function split({ maxQuestions, concurrency = 4 } = {}) {
-  const limit = (model) =>
-    (typeof maxQuestions === "function" ? maxQuestions(model) : maxQuestions) ??
-    QUESTION_LIMITS[model.split("/")[0]] ??
-    Infinity;
+  const limit = (model) => {
+    const n =
+      (typeof maxQuestions === "function" ? maxQuestions(model) : maxQuestions) ??
+      QUESTION_LIMITS[model.split("/")[0]] ??
+      Infinity;
+    if (!(n >= 1)) throw new RangeError("split: maxQuestions must be at least 1");
+    return Math.floor(n);
+  };
+  if (!(concurrency >= 1)) throw new RangeError("split: concurrency must be at least 1");
   return (next) => async (model, request, opts = {}) => {
     const ids = Object.keys(request.questions);
     const size = limit(model);
     if (ids.length <= size) return next(model, request, opts);
+    opts.signal?.throwIfAborted();
     const parts = [];
     for (let i = 0; i < ids.length; i += size) {
       const questions = Object.fromEntries(ids.slice(i, i + size).map((id) => [id, request.questions[id]]));
@@ -150,8 +161,15 @@ function merge(results) {
   };
   const cost = sum("estimated_cost_usd");
   if (cost != null) out.estimated_cost_usd = cost;
-  const reason = results.find((r) => r.block_reason)?.block_reason;
-  if (reason) out.block_reason = reason;
+  // Parts may be answered by different models (fallback, hedge): say so.
+  const models = [...new Set(results.map((r) => r.model).filter(Boolean))];
+  if (models.length > 1) out.models = models;
+  for (const k of ["fellBackFrom", "hedgedFrom"]) {
+    const v = results.find((r) => r[k])?.[k];
+    if (v) out[k] = v;
+  }
+  // Blocked means every answer is refused, so only when every part was.
+  if (results.every((r) => r.block_reason)) out.block_reason = results[0].block_reason;
   if (results.some((r) => r.attempts)) out.attempts = results.reduce((a, r) => a + (r.attempts ?? 1), 0);
   return out;
 }
@@ -165,12 +183,20 @@ function merge(results) {
 export function shadow({ model: shadowModel, onResult, sample = 1, random = Math.random }) {
   return (next) => async (model, request, opts = {}) => {
     const run = random() < sample;
+    const ctrl = new AbortController();
     const shadowCall = run
       ? Promise.resolve()
-          .then(() => next(shadowModel, request, {}))
+          .then(() => next(shadowModel, request, { signal: ctrl.signal }))
           .then((shadow) => ({ shadow }), (error) => ({ error }))
       : null;
-    const primary = await next(model, request, opts);
+    let primary;
+    try {
+      primary = await next(model, request, opts);
+    } catch (e) {
+      // Nothing to compare against: stop paying for the mirror.
+      ctrl.abort(e);
+      throw e;
+    }
     shadowCall?.then(({ shadow, error }) => {
       const comparison = shadow ? compare(primary, shadow) : undefined;
       try {
@@ -215,7 +241,8 @@ export function compare(a, b) {
  * `calibrated.confidence`.
  */
 export function calibrate(calibrators) {
-  const pick = (id) => (typeof calibrators === "function" ? calibrators : calibrators[id]);
+  const pick = (id) =>
+    typeof calibrators === "function" ? calibrators : Object.hasOwn(calibrators, id) ? calibrators[id] : undefined;
   return (next) => async (model, request, opts) => {
     const res = await next(model, request, opts);
     const answers = {};
