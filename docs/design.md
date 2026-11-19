@@ -95,6 +95,9 @@ any compatible server.
 
 ## Planned
 
+The detailed backlog, including unimplemented Gemini features, is in
+[future-work.md](future-work.md).
+
 Built only when a real need appears.
 
 - **Input kinds:** audio, video and documents (PDF, Office, CSV; Gemini only so far, inline up to 100 MB, 50 MB for PDF; no YouTube or `gs://`), and image URLs.

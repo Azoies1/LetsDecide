@@ -123,7 +123,7 @@ Built in small steps; each lands only when needed. Details in
 - [x] **M1** Canonical model, sans-IO core, System One adapter, golden fixtures
 - [x] **M2** OpenAI and Gemini adapters, refusals
 - [x] Verify Gemini against Google's official reference
-- [ ] Audio, video and PDF input (Gemini documents them; not yet in the canonical model)
+- [ ] Audio, video and PDF input (Gemini documents them; not yet in the canonical model). See [docs/future-work.md](docs/future-work.md)
 - [ ] **M3** Bindings (Swift, TypeScript, Python, Kotlin)
 - [ ] **M4** Middleware (retry, fallback, split/merge)
 - [ ] **M5** Evaluation (shadow mode, calibration)
