@@ -258,6 +258,8 @@ enum Wire<'a> {
 // Response wire types.
 #[derive(Deserialize)]
 struct Reply {
+    /// Cloudflare (Clef) wraps the payload: `{"result": {...}, "success": true}`.
+    result: Option<Box<Reply>>,
     model: Option<String>,
     #[serde(default)]
     answers: BTreeMap<Id, RawAnswer>,
@@ -370,6 +372,9 @@ impl Provider for SystemOne {
             ..Error::new(ErrorCode::BadResponse, m)
         };
         let mut reply: Reply = serde_json::from_slice(&res.body).map_err(|e| bad(e.to_string()))?;
+        if let Some(inner) = reply.result.take() {
+            reply = *inner;
+        }
         let input_tokens = reply.usage.and_then(|u| u.input_tokens);
 
         // Input blocked by a safety filter: nothing was evaluated.
