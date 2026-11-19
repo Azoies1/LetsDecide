@@ -12,14 +12,14 @@ Sources: <https://aistudio.google.com/docs/decisions-api> (section "Input"),
 The canonical model (`DecisionRequest`) only carries text/JSON `input` and
 inline base64 `media`. Gemini also accepts, as typed content blocks in `input`:
 
-- [ ] **Audio** (`type: audio`): `data` or `uri`, `mime_type`; optional
+- [x] **Audio** (`type: audio`, inline `data` only): done. Not yet: `uri`; optional
   `channels`, `sample_rate`, `processing`. MIME: wav, mp3, mpeg, aiff, aac, ogg,
   flac, m4a, opus, webm, l16, alaw, mulaw.
-- [ ] **Video** (`type: video`): `data` or `uri`, `mime_type`; optional
+- [x] **Video** (inline `data` only): done. Not yet: `uri`; optional
   `resolution`, `fps`, `start_offset`/`end_offset` (strings like `"10.5s"`),
   `processing` (`static` | `agentic`), `name`. MIME: mp4, mpeg, mov, avi, webm,
   wmv, x-flv, 3gpp (the schema also lists `video/mpg`).
-- [ ] **Documents** (`type: document`): PDF, and per the API schema DOCX, PPTX,
+- [x] **PDF** (`type: document`): done. Not yet, per the API schema: DOCX, PPTX,
   PPT, DOC, DOTX, ODT, ODP, ODS, XLS, XLSX, CSV. Options: `page_options`
   (`start_page`, `end_page`, `content_layers`), `spreadsheet_options`
   (`visible_cells`, `sheet_index`, `content_layers`).
@@ -31,9 +31,9 @@ inline base64 `media`. Gemini also accepts, as typed content blocks in `input`:
 - [ ] **Size limits to enforce:** inline base64 ≤100 MB per request (≤50 MB for
   PDF); media-per-request limits are "same as the Interactions API" (page not
   read; see <https://aistudio.google.com/docs/interactions-overview>).
-- [ ] **Canonical model design:** add a typed `parts`/`attachments` input (kind,
-  MIME, bytes or URL, provider hints) instead of growing `media`. Decide how
-  other providers reject kinds they cannot take (`Unsupported`).
+- [ ] **Canonical model design:** `media` covers inline bytes with the kind from
+  the MIME (other providers return `Unsupported`). URLs, per-media options and
+  the wider document MIMEs need a richer shape; add it when first needed.
 
 ## Gemini Decisions: still unverified
 

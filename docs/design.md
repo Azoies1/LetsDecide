@@ -89,7 +89,13 @@ any compatible server.
   whole input. Add a reason when a provider supplies one.
 - **Bindings pass JSON strings.** No per-type codegen: errors come back as
   data (`{error}`) and the wrapper rethrows. Hand-written `.d.ts` for now.
-- **Images are inline base64 only.** URLs differ per provider (Clef refuses
+- **One `media` list, kind from MIME.** Non-image kinds are Gemini-only; other
+  providers return `Unsupported`.
+- **JSON layer lives in the core** (`src/json.rs`); every binding is a thin
+  wrapper that only adds a transport.
+- **Middleware is `(next) => decide`, in the host language.** Retry and
+  fallback ship; `Client` stays zero-cost without them.
+- **Media is inline base64 only.** URLs differ per provider (Clef refuses
   them, OpenAI and Jev need data or assets), so one portable form wins.
 - **No capability struct yet.** Limits live in the adapter. Add one when a
   second adapter needs shared validation.

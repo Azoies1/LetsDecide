@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Audio, video and PDF input for Gemini (`media`, replacing `images`).
+- Python binding (PyO3, sync and async clients).
+- JS middleware: `retry`, `fallback`.
+- Shared JSON layer in the core (`letsdecide::json`).
+
+### Changed
+- **Breaking:** `images` is now `media`.
+
 ## [0.2.0]
 
 ### Added

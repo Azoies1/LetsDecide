@@ -22,3 +22,13 @@ jobs:
         with: { node-version: 22 }
       - run: npm run build && npm test
         working-directory: bindings/js
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install maturin pytest pytest-asyncio httpx
+      - run: maturin build --out dist && pip install dist/*.whl && pytest
+        working-directory: bindings/python

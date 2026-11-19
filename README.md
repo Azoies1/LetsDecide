@@ -63,18 +63,19 @@ println!("{:?}", decision.answers["positive"]);
 `input` is a string or any JSON value. Providers that only take text get JSON
 serialised to a string.
 
-### Images
+### Media
 
-Add `images: [{ "mime_type": "image/png", "data": "<base64>" }]` to a request.
-Inline base64 only: it is the one form every provider accepts.
+Add `media: [{ "mime_type": "image/png", "data": "<base64>" }]` to a request.
+Inline base64 only: it is the one form every provider accepts. The kind
+(image, audio, video, document) comes from the MIME type.
 
-| Provider | Sent as | Limits |
-|---|---|---|
-| `gemini` | typed `image` blocks | PNG, JPEG, WebP, HEIC, HEIF, GIF, BMP, TIFF |
-| `openai` | `input_image` data URLs | none enforced here |
-| `clef` | `images` data URLs | ≤4, PNG/JPEG/WebP |
-| `jev` | `assets` + placeholders in `state`; sends the `TypeSafe-Danger-Zone-Images` header | PNG/JPEG; needs a vision model such as `jev-preview` |
-| `systemone` | not supported | |
+| Kind | `gemini` | `openai` | `clef` | `jev` | `systemone` |
+|---|---|---|---|---|---|
+| image | typed `image` blocks | `input_image` data URLs | `images` data URLs, ≤4, PNG/JPEG/WebP | `assets` + placeholders in `state`, PNG/JPEG | no |
+| audio, video, PDF | typed blocks | `Unsupported` | `Unsupported` | `Unsupported` | `Unsupported` |
+
+Jev image requests send the `TypeSafe-Danger-Zone-Images` header and need a
+vision model such as `jev-preview`.
 
 ### Answers
 
@@ -129,6 +130,30 @@ Failures throw `LetsDecideError` with `code`, `status`, `retryable` and
 Build and test: `cd bindings/js && npm run build && npm test` (needs the
 `wasm32-unknown-unknown` target and `wasm-bindgen-cli`).
 
+### Middleware (opt-in)
+
+```js
+import { Client, compose, retry, fallback } from "letsdecide";
+
+const decide = compose(client, fallback(["jev/jev-latest"]), retry());
+const res = await decide("clef/clef-flash", request);
+res.attempts; res.fellBackFrom; // see when a fallback happened
+```
+
+Retry (backoff, `Retry-After`) and fallback (also routes around `Unsupported`)
+are plain `(next) => decide` wrappers. See [bindings/js/MIDDLEWARE.md](bindings/js/MIDDLEWARE.md).
+
+## Python
+
+```python
+from letsdecide import Client  # pip install "letsdecide[httpx]"
+
+res = Client(api_key="...").decide("jev/jev-latest", request)
+```
+
+Sync `Client` and `AsyncClient`, both over `httpx`. See
+[bindings/python/README.md](bindings/python/README.md).
+
 ## Verification status
 
 | Provider | Source of the wire format |
@@ -148,9 +173,9 @@ Built in small steps; each lands only when needed. Details in
 - [x] **M1** Canonical model, sans-IO core, System One adapter, golden fixtures
 - [x] **M2** OpenAI and Gemini adapters, refusals
 - [x] Verify Gemini against Google's official reference
-- [ ] Audio, video and PDF input (Gemini documents them; not yet in the canonical model). See [docs/future-work.md](docs/future-work.md)
-- [ ] **M3** Bindings: [x] TypeScript/WASM, [ ] Python, [ ] Swift, [ ] Kotlin
-- [ ] **M4** Middleware (retry, fallback, split/merge)
+- [x] Audio, video and PDF input (Gemini, inline). URLs and per-media options: [docs/future-work.md](docs/future-work.md)
+- [x] **M3** Bindings: TypeScript/WASM, Python. Swift and Kotlin when asked for
+- [x] **M4** Retry and fallback (JS). Next: hedging, split/merge, shadow, calibration, observe
 - [ ] **M5** Evaluation (shadow mode, calibration)
 
 ## Contributing
