@@ -1,0 +1,6 @@
+[bindings.kotlin]
+package_name = "letsdecide.ffi"
+cdylib_name = "letsdecide_uniffi"
+
+[bindings.swift]
+module_name = "LetsDecideFFI"
