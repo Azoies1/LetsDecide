@@ -27,7 +27,7 @@ core, small, and honest (no silent degradation, numbers never rescaled).
   providers need their own settings (region, deployment, extra headers).
 - design.md lists as non-goals *running models locally* and *emulating
   decisions with a chat LLM*. Goal 2 changes the first and needs a careful line
-  on the second (see [Decision D2](#decisions-to-make)).
+  on the second (see [D2](#d2-local-models-in-scope-parsing-generated-text-stays-out-decided)).
 - design.md defers a capability struct "until a second adapter needs shared
   validation". Custom providers plus local-first routing are that need.
 
@@ -106,7 +106,7 @@ let (p, model) = providers.resolve("acme/acme-decide-2")?;
 ```
 
 `resolve()` stays as a shortcut for `Registry::builtin().resolve()`. Registering
-a built-in prefix fails unless the caller says `replace`, so nobody shadows
+a taken prefix fails unless the caller says `replace` ([D1](#d1-custom-prefixes-free-names-error-on-clash-decided)), so nobody shadows
 `openai/` by accident.
 
 JavaScript:
@@ -200,7 +200,7 @@ real probabilities in two principled ways; anything else is a guess.
 
 Runtimes that don't expose log-probs (for example, as far as I know, Apple's
 on-device Foundation Models and Android's Gemini Nano APIs; verify before
-building) can only produce sampled answers. See [D3](#decisions-to-make).
+building) could only produce sampled answers, so they return `Unsupported` ([D3](#d3-runtimes-without-log-probs-return-unsupported-with-details-decided)).
 
 ### Keep the algorithm in the core (sans-IO scorer)
 
@@ -350,30 +350,121 @@ change, fixtures, no silent degradation).
 P1 is small and unblocks everything else. P4 delivers server/PC local support
 without any mobile work, so it can ship before P6.
 
-## Decisions to make
+## Decisions
 
-- **D1. Naming of custom prefixes.** Free names with collision errors
-  (proposed), or a reserved namespace like `x-acme/`?
-- **D2. Non-goals in design.md.** Proposed rewrite: *running models locally*
-  becomes a goal via the scorer + engines; *emulating decisions with a chat
-  LLM* stays a non-goal in the sense of **parsing generated text**. Label
-  scoring reads probabilities directly and is in scope.
-- **D3. Runtimes without log-probs.** Options: (a) `Unsupported` (strict,
-  consistent with "honest"); (b) opt-in sampling (ask n times, probability =
-  share of votes) clearly marked. Proposed: (a) by default, (b) behind an
-  explicit flag, and every response gains `probability_source`:
-  `provider | logprob | nli | sampled`. This is the `confidence_source` item
-  already in design.md's "Planned" list.
-- **D4. Default local model** to document and fixture against (small, open
-  licence, good at label scoring; plus one NLI model for phones). Pick after a
-  short bake-off on a shared eval set; do not hard-code in the library.
-- **D5. Where engines live.** In the main packages (simpler) or separate
-  packages (`letsdecide-local`, keeps the core package tiny, no model
-  runtime deps). Proposed: separate packages; the core and bindings only gain
-  the engine **slot**.
-- **D6. Support tiers in the README**: *Built-in* (verified, fixtures in this
-  repo), *Community* (passes the conformance kit, listed, not maintained by
-  us), *Custom* (yours). Sets expectations without blocking anyone.
+### D1. Custom prefixes: free names, error on clash (decided)
+
+`register("acme", …)` fails with `InvalidRequest` if the name is a built-in
+or already registered, unless the caller passes `replace`. Same check in every
+binding.
+
+The alternative was a reserved namespace (`x-acme/`). Its one benefit: we
+promise never to ship a built-in starting with `x-`, so a custom name can
+never clash with a provider we add later. With free names, if we later add a
+built-in `acme`, the user's `register("acme")` starts failing after an
+upgrade. That failure is loud, happens at start-up (registration, not at
+request time), and the message names the clash, so the cost is small. Free
+names keep model strings readable (`acme/model`, not `x-acme/model`), which
+matters because the whole pitch is "change one string". The changelog lists
+every new built-in prefix.
+
+### D2. Local models in scope; parsing generated text stays out (decided)
+
+design.md's non-goals change to: *running models locally* is a goal (scorer +
+engines); *getting decisions by parsing a model's generated text* stays a
+non-goal. Reasons:
+
+- **The numbers would be invented.** If a model writes "probability: 0.8",
+  that 0.8 is text the model produced, not a measured probability. It is
+  usually poorly calibrated, clusters on round numbers, and changes with
+  phrasing. The README promises probabilities are the provider's real numbers;
+  a generated number would break that promise quietly.
+- **It breaks in ways the core can't classify.** Free text drifts from the
+  format ("Yes, mostly", extra prose, wrong label, half a JSON object). Every
+  failure would need guesswork to map onto our answer shape, which is the
+  "silent degradation" CONTRIBUTING forbids.
+- **It's not repeatable.** Sampling makes the same request give different
+  answers; label scoring is one deterministic forward pass.
+- **It's slower and costs more.** Generation runs many decoding steps; scoring
+  reads one next-token distribution per question, and the input is shared
+  across questions.
+
+Label scoring reads the model's own probabilities directly, so it is in scope.
+
+### D3. Runtimes without log-probs return `Unsupported`, with details (decided)
+
+No sampling mode for now. Instead, `Unsupported` (and other errors) gain a
+structured, safe `details` field so users can see exactly why:
+
+```json
+{
+  "code": "Unsupported",
+  "message": "local engine cannot score label `C` for question `topic`: it spans 2 tokens",
+  "details": {
+    "provider": "local",
+    "reason": "multi_token_label",
+    "question": "topic",
+    "limit": 1,
+    "actual": 2
+  }
+}
+```
+
+`reason` is a stable enum: `no_logprobs`, `multi_token_label`,
+`too_many_options`, `too_many_levels`, `too_many_questions`,
+`media_not_accepted` (with the MIME type), `question_kind` (e.g. NLI engine
+and `score`), `missing_config` (field name). Built-in adapters move their
+existing limit errors onto the same reasons, and every response also gets
+`probability_source`: `provider | logprob | nli` (design.md's planned
+`confidence_source`).
+
+**What `details` may contain:** provider name, model name, reason, the caller's
+question/option/level ids (always `[a-z0-9_]`), counts and limits, MIME types,
+config **field names**, HTTP status, our own label tokens (`A`, `Yes`).
+
+**What it must never contain** (same rule as today, now enforced by tests):
+API keys or any header value, `input`, media bytes, instructions, option or
+level descriptions, request or response bodies, URL query strings, and config
+values (only names). A test builds every error with a canary string in each
+of these places and fails if the canary appears in the serialised error or
+its `Display`.
+
+Custom codecs and engines are user code, so the core can't vet their
+messages. The bindings wrap anything they throw: our own `LetsDecideError`
+passes through; any other exception becomes `ProviderError` with the
+provider name and the exception **type** only, and the original is kept on
+`cause` in memory for the user's own debugging, never serialised by us. The
+guide tells codec authors not to put bodies in messages.
+
+### D4. Default local model: the consumer's choice (decided)
+
+The library names no default model and fixtures use recorded log-probs, not a
+specific model. Docs show how to plug in a model, not which one. Choosing a
+model with the library's help is future work (see
+[future-work.md](future-work.md#model-selection)).
+
+### D5. Packaging (proposed)
+
+Rule: **if it pulls in a model runtime, it's a separate package; if it only
+needs HTTP or our own code, it stays in the main package.** The main packages
+stay as small as today.
+
+| Piece | Where | Why |
+|---|---|---|
+| Engine and codec slots, registry, `check`, `mock` engine | main packages | no deps |
+| Scorer (`score_plan`/`score_answers`) | Rust core, so every binding has it | pure Rust, a few KB |
+| Middleware (`escalate`, `shadow`, capability `fallback`) | main JS / Python packages | no deps |
+| HTTP runtime shims: llama.cpp server, vLLM/SGLang (OpenAI-compatible log-probs), Ollama | main packages | only `fetch`/`httpx`, already used |
+| `letsdecide-serve` sidecar | separate binary and container image | it's a server, not a library |
+| Python in-process: llama-cpp-python, transformers, ONNX Runtime | `letsdecide[llamacpp]`, `[transformers]`, `[onnx]` extras, lazy-imported | same pattern as today's `[httpx]` |
+| JS in-process: transformers.js, WebLLM | `@letsdecide/transformers`, `@letsdecide/webllm` | multi-MB deps, browser-only parts |
+| Swift: llama.cpp, MLX, Core ML | separate SwiftPM products in the Swift package | apps link only what they use |
+| Kotlin: llama.cpp, ONNX Runtime Mobile, ExecuTorch | separate Gradle artifacts | same, plus native libs per ABI |
+
+### D6. Support tiers in the README (proposed)
+
+*Built-in* (verified, fixtures in this repo), *Community* (passes the
+conformance kit, listed, not maintained by us), *Custom* (yours).
 
 ## Risks
 
@@ -384,7 +475,7 @@ without any mobile work, so it can ship before P6.
   Mitigation: the runtime shim reports the token ids it scored; the scorer
   rejects multi-token labels with `Unsupported` rather than guessing.
 - **Binary size on mobile.** The core stays tiny; model runtimes are the
-  user's choice and live in separate packages (D5).
+  user's choice and live in separate packages ([D5](#d5-packaging-proposed)).
 - **Custom code is outside our control.** `check()` stops malformed answers;
   it can't stop wrong ones. The conformance kit and docs make that boundary
   explicit.

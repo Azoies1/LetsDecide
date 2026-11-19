@@ -59,6 +59,21 @@ inline base64 `media`. Gemini also accepts, as typed content blocks in `input`:
 - [ ] Not supported by the API (no work needed, noted for callers): context
   caching, Batch API, Flex/Priority inference.
 
+## Model selection
+
+The library names no default local model; consumers pick one
+([plan D4](plan-custom-and-local-providers.md#d4-default-local-model-the-consumers-choice-decided)).
+Later, let a decision do the choosing:
+
+- [ ] **Decision-routed model choice:** a small, cheap decision question
+  ("is this request simple?", "does it contain an image?") picks which model
+  answers the real request, e.g. a local model for easy cases, a cloud model
+  for hard ones. Built as middleware over the registry.
+- [ ] **Bake-off helper:** run the consumer's own labelled requests against
+  candidate models (local and cloud) and report agreement, latency and cost
+  per question, so the choice is based on their data, not ours. Builds on
+  `shadow` and M5.
+
 ## Project roadmap (from README)
 
 - [ ] **M3** Bindings (Swift, TypeScript, Python, Kotlin)
