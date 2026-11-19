@@ -7,7 +7,8 @@
 use crate::provider::{http_error, post};
 use crate::*;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 /// Presets: `jev`, `clef`, `gemini`, `systemone` (custom base URL).
@@ -74,6 +75,82 @@ impl SystemOne {
         }
     }
 
+    /// Puts input and images where this preset expects them.
+    fn attach_input<'a>(
+        &self,
+        req: &'a DecisionRequest,
+        body: &mut Body<'a>,
+        header: &mut Option<(String, String)>,
+    ) -> Result<(), Error> {
+        let unsupported = |m: &str| Err(Error::new(ErrorCode::Unsupported, m));
+        let imgs = &req.images;
+        body.state = Some(Cow::Borrowed(&req.input));
+        match self.preset {
+            // Typed blocks; text-only input stays a plain string. JSON goes as text.
+            Preset::Gemini => {
+                body.state = None;
+                let text = match &req.input {
+                    Value::String(_) => req.input.clone(),
+                    other => Value::String(other.to_string()),
+                };
+                body.input = Some(if imgs.is_empty() {
+                    text
+                } else {
+                    let blocks = imgs.iter().map(
+                        |i| json!({ "type": "image", "data": i.data, "mime_type": i.mime_type }),
+                    );
+                    let first = json!({ "type": "text", "text": text });
+                    Value::Array(std::iter::once(first).chain(blocks).collect())
+                });
+            }
+            Preset::Clef => {
+                if imgs.len() > 4 {
+                    return unsupported("Clef takes at most 4 images");
+                }
+                if imgs.iter().any(|i| {
+                    !matches!(
+                        i.mime_type.as_str(),
+                        "image/png" | "image/jpeg" | "image/webp"
+                    )
+                }) {
+                    return unsupported("Clef images must be PNG, JPEG or WebP");
+                }
+                body.images = imgs.iter().map(Image::data_url).collect();
+            }
+            Preset::Jev if !imgs.is_empty() => {
+                // Placeholders in `state` are swapped for the assets server-side.
+                let mut refs = vec![];
+                for (n, img) in imgs.iter().enumerate() {
+                    let format = match img.mime_type.as_str() {
+                        "image/png" => "png",
+                        "image/jpeg" => "jpeg",
+                        _ => return unsupported("Jev images must be PNG or JPEG"),
+                    };
+                    let key = format!("letsdecide-image-{n}");
+                    let asset =
+                        json!({ "type": "image", "format": format, "data_base64": img.data });
+                    body.assets.insert(key.clone(), asset);
+                    refs.push(key);
+                }
+                body.state = Some(Cow::Owned(match &req.input {
+                    Value::String(t) => Value::String(format!("{t}\n{}", refs.join("\n"))),
+                    other => Value::Array(
+                        std::iter::once(other.clone())
+                            .chain(refs.into_iter().map(Value::String))
+                            .collect(),
+                    ),
+                }));
+                // Jev gates image requests behind this header.
+                *header = Some(("typesafe-danger-zone-images".into(), "true".into()));
+            }
+            Preset::Custom if !imgs.is_empty() => {
+                return unsupported("images are not supported for custom servers")
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
     fn max_questions(&self) -> usize {
         match self.preset {
             Preset::Clef => 64,
@@ -89,9 +166,15 @@ struct Body<'a> {
     model: &'a str,
     // Jev and Clef call the input `state`; Gemini calls it `input`.
     #[serde(skip_serializing_if = "Option::is_none")]
-    state: Option<&'a Value>,
+    state: Option<Cow<'a, Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     input: Option<Value>,
+    // Clef: data URLs.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    images: Vec<String>,
+    // Jev: placeholder → image, referenced from `state`.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    assets: BTreeMap<String, Value>,
     questions: BTreeMap<&'a str, Wire<'a>>,
 }
 
@@ -188,25 +271,25 @@ impl Provider for SystemOne {
                 (id.as_str(), wire)
             })
             .collect();
-        let gemini = self.preset == Preset::Gemini;
-        let body = Body {
+        let mut body = Body {
             model,
-            state: (!gemini).then_some(&req.input),
-            // Gemini takes text; JSON must be sent as a string.
-            input: gemini.then(|| match &req.input {
-                Value::String(_) => req.input.clone(),
-                other => Value::String(other.to_string()),
-            }),
+            state: None,
+            input: None,
+            images: vec![],
+            assets: BTreeMap::new(),
             questions,
         };
+        let mut extra_header = None;
+        self.attach_input(req, &mut body, &mut extra_header)?;
         let body = serde_json::to_vec(&body)
             .map_err(|e| Error::new(ErrorCode::InvalidRequest, e.to_string()))?;
         let url = self.url(model, cfg)?;
-        Ok(if gemini {
-            post(url, "x-goog-api-key", false, cfg, body)
-        } else {
-            post(url, "authorization", true, cfg, body)
-        })
+        let mut http = match self.preset {
+            Preset::Gemini => post(url, "x-goog-api-key", false, cfg, body),
+            _ => post(url, "authorization", true, cfg, body),
+        };
+        http.headers.extend(extra_header);
+        Ok(http)
     }
 
     fn parse(&self, req: &DecisionRequest, res: &HttpResponse) -> Result<DecisionResponse, Error> {

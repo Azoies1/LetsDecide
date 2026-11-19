@@ -86,6 +86,8 @@ any compatible server.
   the reference showed otherwise.
 - **`Refused` carries no reason.** OpenAI's refusal has none; Gemini blocks the
   whole input. Add a reason when a provider supplies one.
+- **Images are inline base64 only.** URLs differ per provider (Clef refuses
+  them, OpenAI and Jev need data or assets), so one portable form wins.
 - **No capability struct yet.** Limits live in the adapter. Add one when a
   second adapter needs shared validation.
 - **Licence: Apache-2.0** (patent grant).
@@ -94,8 +96,7 @@ any compatible server.
 
 Built only when a real need appears.
 
-- **Input kinds:** images, audio, video and PDF (providers differ: OpenAI inline
-  images, Gemini typed blocks and URLs).
+- **Input kinds:** audio, video and PDF (Gemini only so far), and image URLs.
 - **Bindings:** generated from `spec/decision.schema.json`.
 - **Middleware** (opt-in, in the host language): retry, fallback with
   capability routing, hedging, split/merge for over-limit requests, calibration

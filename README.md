@@ -14,8 +14,8 @@ question types (yes/no, choice, score) but disagree on wire format.
 
 > **Status: early (v0.2).** Adapters for Jev, Clef, Gemini, OpenAI and any
 > System One compatible server. Wire formats come from public docs; see
-> [Verification status](#verification-status). Image/audio/PDF input is not
-> supported yet. See the [roadmap](#roadmap).
+> [Verification status](#verification-status). Image input is supported;
+> audio, video and PDF are not yet. See the [roadmap](#roadmap).
 
 ## Usage
 
@@ -63,6 +63,19 @@ println!("{:?}", decision.answers["positive"]);
 `input` is a string or any JSON value. Providers that only take text get JSON
 serialised to a string.
 
+### Images
+
+Add `images: [{ "mime_type": "image/png", "data": "<base64>" }]` to a request.
+Inline base64 only: it is the one form every provider accepts.
+
+| Provider | Sent as | Limits |
+|---|---|---|
+| `gemini` | typed `image` blocks | provider's MIME list |
+| `openai` | `input_image` data URLs | none enforced here |
+| `clef` | `images` data URLs | ≤4, PNG/JPEG/WebP |
+| `jev` | `assets` + placeholders in `state`; sends the `TypeSafe-Danger-Zone-Images` header | PNG/JPEG; needs a vision model such as `jev-preview` |
+| `systemone` | not supported | |
+
 ### Answers
 
 | Question | Answer | Notes |
@@ -109,7 +122,7 @@ Built in small steps; each lands only when needed. Details in
 
 - [x] **M1** Canonical model, sans-IO core, System One adapter, golden fixtures
 - [x] **M2** OpenAI and Gemini adapters, refusals
-- [ ] Verify Gemini against Google's official reference; image, audio and PDF input
+- [ ] Verify Gemini against Google's official reference; audio, video and PDF input
 - [ ] **M3** Bindings (Swift, TypeScript, Python, Kotlin)
 - [ ] **M4** Middleware (retry, fallback, split/merge)
 - [ ] **M5** Evaluation (shadow mode, calibration)

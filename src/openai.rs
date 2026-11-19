@@ -1,6 +1,6 @@
 //! OpenAI Decisions adapter (`POST /v1/decisions`, model `gpt-6-luna`).
 //!
-//! Verified against OpenAI's reference. Not supported yet: image input.
+//! Verified against OpenAI's reference. Images go as base64 data URLs.
 
 use crate::provider::{http_error, post};
 use crate::*;
@@ -95,10 +95,19 @@ impl Provider for OpenAi {
         if req.questions.len() > MAX_QUESTIONS {
             return unsupported(format!("max {MAX_QUESTIONS} questions per request"));
         }
-        let input = match &req.input {
-            Value::String(_) => req.input.clone(),
-            Value::Object(_) | Value::Array(_) => {
-                json!([{ "role": "user", "content": [{ "type": "input_json", "data": req.input }] }])
+        let input = match (&req.input, req.images.is_empty()) {
+            (Value::String(_), true) => req.input.clone(),
+            (Value::String(_) | Value::Object(_) | Value::Array(_), _) => {
+                let text = match &req.input {
+                    Value::String(t) => json!({ "type": "input_text", "text": t }),
+                    data => json!({ "type": "input_json", "data": data }),
+                };
+                let images = req
+                    .images
+                    .iter()
+                    .map(|i| json!({ "type": "input_image", "image_url": i.data_url() }));
+                let parts: Vec<Value> = std::iter::once(text).chain(images).collect();
+                json!([{ "role": "user", "content": parts }])
             }
             _ => {
                 return Err(Error::new(

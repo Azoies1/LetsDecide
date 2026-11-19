@@ -1,0 +1,79 @@
+{
+  "model": "jev/jev-preview",
+  "config": {
+    "api_key": "k"
+  },
+  "request": {
+    "input": "A photo.",
+    "images": [
+      {
+        "mime_type": "image/png",
+        "data": "QUJD"
+      }
+    ],
+    "questions": {
+      "q": {
+        "kind": "yesno",
+        "instructions": "Is it red?"
+      }
+    }
+  },
+  "http": {
+    "url": "https://api.typesafe.ai/v1/systemone",
+    "headers": [
+      [
+        "content-type",
+        "application/json"
+      ],
+      [
+        "authorization",
+        "Bearer k"
+      ],
+      [
+        "typesafe-danger-zone-images",
+        "true"
+      ]
+    ],
+    "body": {
+      "model": "jev-preview",
+      "state": "A photo.\nletsdecide-image-0",
+      "assets": {
+        "letsdecide-image-0": {
+          "type": "image",
+          "format": "png",
+          "data_base64": "QUJD"
+        }
+      },
+      "questions": {
+        "q": {
+          "type": "noul",
+          "instructions": "Is it red?"
+        }
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": [],
+    "body": {
+      "answers": {
+        "q": {
+          "type": "noul",
+          "noul": 0.5
+        }
+      }
+    }
+  },
+  "expected": {
+    "ok": {
+      "model": null,
+      "input_tokens": null,
+      "answers": {
+        "q": {
+          "kind": "yesno",
+          "probability": 0.5
+        }
+      }
+    }
+  }
+}

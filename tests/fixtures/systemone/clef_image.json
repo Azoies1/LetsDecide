@@ -1,0 +1,72 @@
+{
+  "model": "clef/clef",
+  "config": {
+    "api_key": "t",
+    "account_id": "a"
+  },
+  "request": {
+    "input": "A photo.",
+    "images": [
+      {
+        "mime_type": "image/png",
+        "data": "QUJD"
+      }
+    ],
+    "questions": {
+      "q": {
+        "kind": "yesno",
+        "instructions": "Is it red?"
+      }
+    }
+  },
+  "http": {
+    "url": "https://api.cloudflare.com/client/v4/accounts/a/ai/run/@cf/cloudflare/clef",
+    "headers": [
+      [
+        "content-type",
+        "application/json"
+      ],
+      [
+        "authorization",
+        "Bearer t"
+      ]
+    ],
+    "body": {
+      "model": "clef",
+      "state": "A photo.",
+      "images": [
+        "data:image/png;base64,QUJD"
+      ],
+      "questions": {
+        "q": {
+          "type": "noul",
+          "instructions": "Is it red?"
+        }
+      }
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": [],
+    "body": {
+      "answers": {
+        "q": {
+          "type": "noul",
+          "noul": 0.5
+        }
+      }
+    }
+  },
+  "expected": {
+    "ok": {
+      "model": null,
+      "input_tokens": null,
+      "answers": {
+        "q": {
+          "kind": "yesno",
+          "probability": 0.5
+        }
+      }
+    }
+  }
+}

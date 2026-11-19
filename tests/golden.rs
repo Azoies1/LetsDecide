@@ -122,6 +122,47 @@ fn jev_and_clef_cap_score_levels_at_ten() {
 }
 
 #[test]
+fn image_limits() {
+    let img = serde_json::json!({ "mime_type": "image/png", "data": "QUJD" });
+    let mk = |n: usize, mime: &str| -> DecisionRequest {
+        let mut i = img.clone();
+        i["mime_type"] = mime.into();
+        serde_json::from_value(serde_json::json!({
+            "input": "x",
+            "images": vec![i; n],
+            "questions": { "q": { "kind": "yesno", "instructions": "?" } }
+        }))
+        .unwrap()
+    };
+    let cfg = Config {
+        account_id: Some("a".into()),
+        base_url: Some("http://h".into()),
+        ..Default::default()
+    };
+    let code = |model: &str, req: &DecisionRequest| {
+        let (p, m) = resolve(model).unwrap();
+        p.build(m, req, &cfg).err().map(|e| e.code)
+    };
+    assert_eq!(
+        code("clef/clef", &mk(5, "image/png")),
+        Some(ErrorCode::Unsupported)
+    );
+    assert_eq!(
+        code("clef/clef", &mk(1, "image/gif")),
+        Some(ErrorCode::Unsupported)
+    );
+    assert_eq!(
+        code("jev/jev-preview", &mk(1, "image/webp")),
+        Some(ErrorCode::Unsupported)
+    );
+    assert_eq!(
+        code("systemone/m", &mk(1, "image/png")),
+        Some(ErrorCode::Unsupported)
+    );
+    assert_eq!(code("clef/clef", &mk(4, "image/webp")), None);
+}
+
+#[test]
 fn unknown_provider_and_bad_ref() {
     assert_eq!(
         resolve("nope/x").err().unwrap().code,

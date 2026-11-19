@@ -12,7 +12,24 @@ pub type Id = String;
 pub struct DecisionRequest {
     /// Text or JSON the questions are asked about.
     pub input: Value,
+    /// Shown alongside `input`. Inline only: base64 works on every provider.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<Image>,
     pub questions: BTreeMap<Id, Question>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Image {
+    /// e.g. `image/png`.
+    pub mime_type: String,
+    /// Base64 bytes, no `data:` prefix.
+    pub data: String,
+}
+
+impl Image {
+    pub(crate) fn data_url(&self) -> String {
+        format!("data:{};base64,{}", self.mime_type, self.data)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
