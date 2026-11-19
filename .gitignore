@@ -5,3 +5,4 @@ bindings/js/pkg
 __pycache__
 *.so
 .venv
+.env
