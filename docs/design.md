@@ -79,6 +79,8 @@ any compatible server.
 
 ## Decisions made
 
+Numbered records live in [adr/](adr/README.md); the list below is the original summary.
+
 - **Rust core.** One codebase for every provider mapping; bindings are generated
   later (UniFFI, napi-rs, PyO3, wasm-bindgen). Fallback if too heavy: TypeScript
   + Swift sharing the same JSON fixtures.
