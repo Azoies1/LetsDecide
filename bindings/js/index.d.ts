@@ -46,7 +46,10 @@ export interface DecisionResponse {
 }
 
 export interface ClientConfig {
+  /** Static key. Required for `gemini/*`. */
   apiKey?: string;
+  /** OAuth access token for `clef/*`, or a function returning a fresh one (called per request). Wins over `apiKey`. */
+  accessToken?: string | (() => string | Promise<string>);
   /** Required for `systemone/*`. */
   baseUrl?: string;
   /** Required for `clef/*`. */

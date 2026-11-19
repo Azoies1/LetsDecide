@@ -86,6 +86,7 @@ fn clef_enforces_question_limit() {
         serde_json::from_value(serde_json::json!({ "input": "x", "questions": questions.collect::<serde_json::Map<_, _>>() })).unwrap();
     let cfg = Config {
         account_id: Some("a".into()),
+        api_key: Some("k".into()),
         ..Default::default()
     };
     let (p, m) = resolve("clef/clef").unwrap();
@@ -107,6 +108,7 @@ fn jev_and_clef_cap_score_levels_at_ten() {
     .unwrap();
     let cfg = Config {
         account_id: Some("a".into()),
+        api_key: Some("k".into()),
         ..Default::default()
     };
     for model in ["jev/jev-latest", "clef/clef"] {
@@ -136,6 +138,7 @@ fn image_limits() {
     };
     let cfg = Config {
         account_id: Some("a".into()),
+        api_key: Some("k".into()),
         base_url: Some("http://h".into()),
         ..Default::default()
     };
@@ -172,6 +175,7 @@ fn non_image_media_is_gemini_only() {
     .unwrap();
     let cfg = Config {
         account_id: Some("a".into()),
+        api_key: Some("k".into()),
         base_url: Some("http://h".into()),
         ..Default::default()
     };
@@ -204,6 +208,13 @@ fn unknown_provider_and_bad_ref() {
     );
 }
 
+fn keyed() -> Config {
+    Config {
+        api_key: Some("k".into()),
+        ..Default::default()
+    }
+}
+
 #[test]
 fn config_debug_redacts_key() {
     let cfg = Config {
@@ -215,7 +226,7 @@ fn config_debug_redacts_key() {
 
 #[test]
 fn gemini_limits() {
-    let cfg = Config::default();
+    let cfg = keyed();
     let (p, m) = resolve("gemini/gemini-decision-1").unwrap();
     let opts: serde_json::Map<String, Value> = (0..256)
         .map(|i| (format!("o{i}"), Value::String("d".into())))
@@ -247,7 +258,7 @@ fn gemini_limits() {
 fn gemini_build(req: serde_json::Value) -> Result<serde_json::Value, Error> {
     let req: DecisionRequest = serde_json::from_value(req).unwrap();
     let (p, m) = resolve("gemini/gemini-3-flash").unwrap();
-    let http = p.build(m, &req, &Config::default())?;
+    let http = p.build(m, &req, &keyed())?;
     Ok(serde_json::from_slice(&http.body).unwrap())
 }
 
@@ -306,7 +317,7 @@ fn other_providers_reject_gemini_extras() {
     for m in ["jev/jev-latest", "openai/gpt-5"] {
         let (p, m) = resolve(m).unwrap();
         assert_eq!(
-            p.build(m, &req, &Config::default()).unwrap_err().code,
+            p.build(m, &req, &keyed()).unwrap_err().code,
             ErrorCode::Unsupported
         );
     }
@@ -376,7 +387,81 @@ fn other_providers_reject_uri_media() {
     .unwrap();
     let (p, m) = resolve("jev/jev-latest").unwrap();
     assert_eq!(
-        p.build(m, &req, &Config::default()).unwrap_err().code,
+        p.build(m, &req, &keyed()).unwrap_err().code,
         ErrorCode::Unsupported
     );
+}
+
+fn clef_http(cfg: Config) -> Result<HttpRequest, Error> {
+    let req: DecisionRequest = serde_json::from_value(serde_json::json!({
+        "input": "x",
+        "questions": { "q": { "kind": "yesno", "instructions": "?" } }
+    }))
+    .unwrap();
+    let (p, m) = resolve("clef/clef-flash").unwrap();
+    p.build(m, &req, &cfg)
+}
+
+fn header<'a>(h: &'a HttpRequest, name: &str) -> Option<&'a str> {
+    h.headers
+        .iter()
+        .find(|(k, _)| k == name)
+        .map(|(_, v)| v.as_str())
+}
+
+#[test]
+fn clef_oauth_token_is_bearer_and_wins_over_key() {
+    let http = clef_http(Config {
+        account_id: Some("a".into()),
+        access_token: Some("tok".into()),
+        api_key: Some("key".into()),
+        ..Default::default()
+    })
+    .unwrap();
+    assert_eq!(header(&http, "authorization"), Some("Bearer tok"));
+}
+
+#[test]
+fn clef_still_accepts_api_key_alone() {
+    let http = clef_http(Config {
+        account_id: Some("a".into()),
+        api_key: Some("key".into()),
+        ..Default::default()
+    })
+    .unwrap();
+    assert_eq!(header(&http, "authorization"), Some("Bearer key"));
+}
+
+#[test]
+fn clef_without_any_credential_fails_before_sending() {
+    let err = clef_http(Config {
+        account_id: Some("a".into()),
+        ..Default::default()
+    })
+    .unwrap_err();
+    assert_eq!(err.code, ErrorCode::InvalidRequest);
+}
+
+#[test]
+fn gemini_sends_key_header_and_requires_it() {
+    let req: DecisionRequest = serde_json::from_value(serde_json::json!({
+        "input": "x",
+        "questions": { "q": { "kind": "yesno", "instructions": "?" } }
+    }))
+    .unwrap();
+    let (p, m) = resolve("gemini/gemini-decision-1").unwrap();
+    let http = p.build(m, &req, &keyed()).unwrap();
+    assert_eq!(header(&http, "x-goog-api-key"), Some("k"));
+    assert!(header(&http, "authorization").is_none());
+    let err = p.build(m, &req, &Config::default()).unwrap_err();
+    assert_eq!(err.code, ErrorCode::InvalidRequest);
+}
+
+#[test]
+fn config_debug_redacts_access_token() {
+    let cfg = Config {
+        access_token: Some("secret-token".into()),
+        ..Default::default()
+    };
+    assert!(!format!("{cfg:?}").contains("secret-token"));
 }

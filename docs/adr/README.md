@@ -14,3 +14,4 @@ Format: copy [0000-template.md](0000-template.md).
 | [0004](0004-score-is-level-index.md) | Scores are 0-based level indexes | Accepted |
 | [0005](0005-errors-over-degradation.md) | Unsupported features error, never degrade | Accepted |
 | [0006](0006-keys-in-memory-only.md) | Keys live in memory only | Accepted |
+| [0007](0007-oauth-token-in-config-host-refreshes.md) | OAuth token in `Config`; host refreshes | Accepted |
