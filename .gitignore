@@ -2,3 +2,6 @@
 node_modules
 bindings/js/pkg
 .claude/
+__pycache__
+*.so
+.venv

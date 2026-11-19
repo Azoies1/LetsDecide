@@ -1,0 +1,15 @@
+[package]
+name = "letsdecide-py"
+version = "0.2.0"
+edition = "2021"
+description = "Python binding for letsdecide"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+name = "_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+letsdecide = { path = "../.." }
+pyo3 = { version = "0.23", features = ["abi3-py310"] }
