@@ -13,20 +13,36 @@ pub struct DecisionRequest {
     /// Text or JSON the questions are asked about.
     pub input: Value,
     /// Shown alongside `input`. Inline only: base64 works on every provider.
+    /// Only Gemini takes non-image kinds.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub images: Vec<Image>,
+    pub media: Vec<Media>,
     pub questions: BTreeMap<Id, Question>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct Image {
-    /// e.g. `image/png`.
+pub struct Media {
+    /// e.g. `image/png`, `audio/mp3`, `video/mp4`, `application/pdf`.
     pub mime_type: String,
     /// Base64 bytes, no `data:` prefix.
     pub data: String,
 }
 
-impl Image {
+impl Media {
+    /// `image`, `audio`, `video` or `document` (PDF), from the MIME type.
+    pub fn kind(&self) -> Option<&'static str> {
+        match self.mime_type.split_once('/')?.0 {
+            "image" => Some("image"),
+            "audio" => Some("audio"),
+            "video" => Some("video"),
+            _ if self.mime_type == "application/pdf" => Some("document"),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn is_image(&self) -> bool {
+        self.kind() == Some("image")
+    }
+
     pub(crate) fn data_url(&self) -> String {
         format!("data:{};base64,{}", self.mime_type, self.data)
     }
@@ -88,6 +104,17 @@ pub enum Answer {
 }
 
 impl DecisionRequest {
+    /// For providers that take images only.
+    pub(crate) fn require_images_only(&self) -> Result<(), Error> {
+        match self.media.iter().find(|m| !m.is_image()) {
+            Some(m) => Err(Error::new(
+                ErrorCode::Unsupported,
+                format!("this provider takes images only, not `{}`", m.mime_type),
+            )),
+            None => Ok(()),
+        }
+    }
+
     /// Provider-independent checks. Providers add their own limits.
     pub fn validate(&self) -> Result<(), Error> {
         let bad = |m: String| Err(Error::new(ErrorCode::InvalidRequest, m));
