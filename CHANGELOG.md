@@ -16,7 +16,6 @@ All notable changes to this project are documented here. The format follows
 - `provider_extras` on requests.
 - Cost estimates: `estimate_cost_usd`, and `estimated_cost_usd` on binding
   responses, from `spec/prices.json`.
-- Live contract tests (`pytest -m live`), run nightly in CI.
 - The JS package root now re-exports the middleware.
 - Authentication: OAuth `access_token` for Clef (string, or a function in JS and Python that is called per request so tokens can refresh); Gemini `api_key` is now checked up front. Both fail with `InvalidRequest` before sending if no credential is set.
 - Audio, video and document input for Gemini (`media`, replacing `images`), with `uri` and per-media `options`.

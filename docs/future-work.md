@@ -38,6 +38,20 @@ Live calls (2026-11-19) confirmed: all three question kinds, CSV documents, an
 - [ ] A shared `spec/decision.schema.json`, if hand-written types drift.
 - [ ] Hosted proxy product: open question, not planned.
 
+## Optional: live contract tests
+
+Not built on purpose: every run spends real tokens, and golden fixtures
+already pin each wire format. Worth adding if a provider starts changing its
+format without notice. The shape it would take:
+
+- A `live` pytest marker in `bindings/python`, deselected by default
+  (`addopts = "-m 'not live'"`), run with `pytest -m live`.
+- One test per provider sending all three question kinds and checking the
+  canonical shape (answers for every id, probabilities summing to 1, choice
+  ids round-tripping), skipped when that provider's key is not set.
+- Run by hand, or on a rare schedule (weekly or manual `workflow_dispatch`)
+  with keys from repository secrets. Keep requests tiny to bound cost.
+
 ## Release
 
 Not published yet. Before the first release:
@@ -48,4 +62,3 @@ Not published yet. Before the first release:
   `build.gradle.kts`.
 - [ ] Publish: crates.io, npm (with `pkg/`), PyPI wheels (maturin), Maven
   Central, a SwiftPM release with the XCFramework attached.
-- [ ] Repository secrets for the nightly live tests.

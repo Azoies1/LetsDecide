@@ -213,9 +213,9 @@ over `java.net.http` and `URLSession`. See
 | Clef | Cloudflare's official Clef docs |
 | Gemini | Google's [create-decision](https://aistudio.google.com/api-reference/decisions/create-decision) and [decisions-api](https://aistudio.google.com/docs/decisions-api) pages, read 2026-11-19, and live calls (all kinds, CSV, URI image). Open points: [docs/future-work.md](docs/future-work.md) |
 
-Fixtures in `tests/fixtures/` encode these shapes. Corrections welcome.
-`pytest -m live` in `bindings/python` checks every provider you have keys for
-against the real API; CI runs it nightly.
+Fixtures in `tests/fixtures/` encode these shapes. Corrections welcome. CI
+makes no real provider calls; live contract tests are an optional addition
+(see [docs/future-work.md](docs/future-work.md#optional-live-contract-tests)).
 
 ## Roadmap
 
@@ -229,7 +229,8 @@ Built in small steps; each lands only when needed. Details in
 - [x] **M3** Bindings: TypeScript/WASM, Python, Kotlin, Swift (UniFFI)
 - [x] **M4** Middleware: retry, fallback, hedging, split/merge, observe (JS and Python)
 - [x] **M5** Evaluation: shadow mode with agreement, calibration (isotonic fit, Brier score)
-- [x] Extras: OpenAI image URLs, `confidence_source`, cost estimates, `provider_extras`, live nightly contract tests
+- [x] Extras: OpenAI image URLs, `confidence_source`, cost estimates, `provider_extras`
+- [ ] Optional: live contract tests (not built: each run spends real tokens)
 - [ ] First release (crates.io, npm, PyPI, Maven, SwiftPM)
 
 ## Contributing

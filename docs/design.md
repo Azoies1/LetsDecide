@@ -109,8 +109,9 @@ Numbered records live in [adr/](adr/README.md); the list below is the original s
   `calibrated` next to raw values, never in place of them.
 - **Swift and Kotlin through UniFFI.** One crate (`bindings/uniffi`) exports
   the same JSON pair; each language adds only a client and a transport.
-- **Live tests run nightly, not per push.** They need keys and cost money;
-  golden fixtures cover every push.
+- **No live tests in CI.** Real calls need keys and spend tokens on every
+  run; golden fixtures cover the wire formats. Live contract tests are an
+  optional add-on (see future-work).
 - **No capability struct yet.** Limits live in the adapter. Add one when a
   second adapter needs shared validation.
 - **Licence: Apache-2.0** (patent grant).
