@@ -12,27 +12,23 @@ Sources: <https://aistudio.google.com/docs/decisions-api> (section "Input"),
 The canonical model (`DecisionRequest`) only carries text/JSON `input` and
 inline base64 `media`. Gemini also accepts, as typed content blocks in `input`:
 
-- [x] **Audio** (`type: audio`, inline `data` only): done. Not yet: `uri`; optional
-  `channels`, `sample_rate`, `processing`. MIME: wav, mp3, mpeg, aiff, aac, ogg,
+- [x] **Audio** (`type: audio`): done, including `uri` and options. MIME: wav, mp3, mpeg, aiff, aac, ogg,
   flac, m4a, opus, webm, l16, alaw, mulaw.
-- [x] **Video** (inline `data` only): done. Not yet: `uri`; optional
-  `resolution`, `fps`, `start_offset`/`end_offset` (strings like `"10.5s"`),
-  `processing` (`static` | `agentic`), `name`. MIME: mp4, mpeg, mov, avi, webm,
+- [x] **Video**: done, including `uri` and options. MIME: mp4, mpeg, mov, avi, webm,
   wmv, x-flv, 3gpp (the schema also lists `video/mpg`).
-- [x] **PDF** (`type: document`): done. Not yet, per the API schema: DOCX, PPTX,
-  PPT, DOC, DOTX, ODT, ODP, ODS, XLS, XLSX, CSV. Options: `page_options`
-  (`start_page`, `end_page`, `content_layers`), `spreadsheet_options`
-  (`visible_cells`, `sheet_index`, `content_layers`).
-  **Open conflict:** the guide page lists only `application/pdf`, the API
-  schema lists the wider set. Test against the live API before accepting more.
+- [x] **Documents** (`type: document`): PDF plus DOCX, PPTX, PPT, DOC, DOTX, ODT,
+  ODP, ODS, XLS, XLSX and CSV are accepted for Gemini, with `page_options` and
+  `spreadsheet_options`.
+  **Still unverified:** the guide page lists only `application/pdf`, the API
+  schema lists the wider set. The wider set is accepted but untested live.
 - [x] **Per-media options:** done for all kinds via `Media.options` (Gemini only;
   keys checked per kind, values passed through unvalidated).
-- [ ] **URI inputs:** Files API URIs and public/signed HTTPS URLs (≤15 MB each).
+- [x] **URI inputs:** done (`Media.uri`, `https://` only; no YouTube, no `gs://`). Original note: Files API URIs and public/signed HTTPS URLs (≤15 MB each).
   Not supported by Gemini: YouTube URLs, `gs://`.
 - [x] **Size limits:** inline ≤100 MB per request, ≤50 MB PDF: enforced client-side.
   Still open: media-per-request limits are "same as the Interactions API" (page not
   read; see <https://aistudio.google.com/docs/interactions-overview>).
-- [ ] **Canonical model design:** `media` covers inline bytes with the kind from
+- [x] **Canonical model design:** done (`uri`, `options`, wider MIMEs). Original note: `media` covers inline bytes with the kind from
   the MIME (other providers return `Unsupported`). URLs, per-media options and
   the wider document MIMEs need a richer shape; add it when first needed.
 
@@ -49,14 +45,15 @@ inline base64 `media`. Gemini also accepts, as typed content blocks in `input`:
   `input_tokens_by_modality` and other fields.
 - [x] Block reason surfaced as `DecisionResponse.block_reason`. Still open: score
   `legend` (response shape not verified).
-- [ ] Question/option id rules: Gemini allows `[A-Za-z0-9_-]` for question keys
+- [x] Question/option id rules: done for Gemini (`IdRule::Gemini`). Original note: Gemini allows `[A-Za-z0-9_-]` for question keys
   and richer option keys (≤128 chars / 512 bytes); we enforce the stricter
   `[a-z0-9_]{1,64}` everywhere. Revisit if callers need the wider set.
-- [ ] Partly done: question `noul` `criteria`
+- [ ] Open: question `noul` `criteria`
   (`yes_description` / `no_description`). Still open: `instructions` as a
   `TextContent` array.
-- [ ] Context limit 262,144 tokens across input and questions is not checked
-  client-side.
+- [x] Context limit: a lower-bound estimate (UTF-8 bytes / 4, text only) rejects
+  requests that are certainly too big. Real token counts and media are not
+  counted.
 - [ ] Not supported by the API (no work needed, noted for callers): context
   caching, Batch API, Flex/Priority inference.
 

@@ -1,10 +1,12 @@
 export type Json = string | number | boolean | null | Json[] | { [k: string]: Json };
 
 export interface Media {
-  /** `image/*`, `audio/*`, `video/*` or `application/pdf`; non-images: Gemini only. */
+  /** `image/*`, `audio/*`, `video/*`, `application/pdf` or (Gemini, untested live) Office/CSV; non-images: Gemini only. */
   mime_type: string;
-  /** Base64, no `data:` prefix. */
-  data: string;
+  /** Base64, no `data:` prefix. Give `data` or `uri`, not both. */
+  data?: string;
+  /** Gemini only: `https://` URL or Files API URI (not YouTube or `gs://`). */
+  uri?: string;
   /** Gemini only. image: `resolution`; audio: `channels`, `sample_rate`, `processing`;
    * video: `resolution`, `fps`, `start_offset`, `end_offset`, `processing`, `name`;
    * document: `page_options`, `spreadsheet_options`. */
@@ -25,7 +27,7 @@ export type Question =
 export interface DecisionRequest {
   input: Json;
   media?: Media[];
-  /** Ids match `[a-z0-9_]{1,64}`. */
+  /** Ids match `[a-z0-9_]{1,64}`; Gemini also allows `[A-Za-z0-9_-]` keys and wider option ids. */
   questions: Record<string, Question>;
 }
 

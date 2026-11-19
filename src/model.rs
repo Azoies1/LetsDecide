@@ -23,8 +23,13 @@ pub struct DecisionRequest {
 pub struct Media {
     /// e.g. `image/png`, `audio/mp3`, `video/mp4`, `application/pdf`.
     pub mime_type: String,
-    /// Base64 bytes, no `data:` prefix.
+    /// Base64 bytes, no `data:` prefix. Empty when `uri` is used.
+    #[serde(default)]
     pub data: String,
+    /// Public or signed `https://` URL, or a Gemini Files API URI, instead of
+    /// `data`. Gemini only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uri: Option<String>,
     /// Per-media options, e.g. `resolution`, `fps`, `start_offset`. Gemini
     /// only; other providers return `Unsupported` when this is set.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -32,13 +37,13 @@ pub struct Media {
 }
 
 impl Media {
-    /// `image`, `audio`, `video` or `document` (PDF), from the MIME type.
+    /// `image`, `audio`, `video` or `document` (PDF, Office, CSV), from the MIME type.
     pub fn kind(&self) -> Option<&'static str> {
         match self.mime_type.split_once('/')?.0 {
             "image" => Some("image"),
             "audio" => Some("audio"),
             "video" => Some("video"),
-            _ if self.mime_type == "application/pdf" => Some("document"),
+            _ if DOCUMENT_MIME.contains(&self.mime_type.as_str()) => Some("document"),
             _ => None,
         }
     }
@@ -51,6 +56,23 @@ impl Media {
         format!("data:{};base64,{}", self.mime_type, self.data)
     }
 }
+
+/// Document MIME types. Only PDF is confirmed by Gemini's guide page; the rest
+/// come from its API schema and are untested against the live API.
+pub(crate) const DOCUMENT_MIME: [&str; 12] = [
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.template",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-powerpoint",
+    "application/msword",
+    "application/vnd.oasis.opendocument.text",
+    "application/vnd.oasis.opendocument.presentation",
+    "application/vnd.oasis.opendocument.spreadsheet",
+    "application/vnd.ms-excel",
+    "text/csv",
+];
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
@@ -137,6 +159,9 @@ impl DecisionRequest {
     /// For providers that ignore per-media options and yes/no descriptions.
     pub(crate) fn require_no_gemini_extras(&self) -> Result<(), Error> {
         let un = |m: String| Err(Error::new(ErrorCode::Unsupported, m));
+        if self.media.iter().any(|m| m.uri.is_some()) {
+            return un("URI media is supported by Gemini only".into());
+        }
         if self.media.iter().any(|m| !m.options.is_empty()) {
             return un("per-media options are supported by Gemini only".into());
         }
@@ -152,12 +177,24 @@ impl DecisionRequest {
 
     /// Provider-independent checks. Providers add their own limits.
     pub fn validate(&self) -> Result<(), Error> {
+        self.validate_with(IdRule::Strict)
+    }
+
+    /// As `validate`, with the id rule the provider allows.
+    pub(crate) fn validate_with(&self, rule: IdRule) -> Result<(), Error> {
         let bad = |m: String| Err(Error::new(ErrorCode::InvalidRequest, m));
         if self.questions.is_empty() {
             return bad("no questions".into());
         }
+        for m in &self.media {
+            match (m.data.is_empty(), &m.uri) {
+                (true, None) => return bad("media needs `data` or `uri`".into()),
+                (false, Some(_)) => return bad("media takes `data` or `uri`, not both".into()),
+                _ => {}
+            }
+        }
         for (id, q) in &self.questions {
-            if !valid_id(id) {
+            if !rule.question_id(id) {
                 return bad(format!("invalid question id `{id}`"));
             }
             let ids: Vec<&str> = match q {
@@ -171,11 +208,41 @@ impl DecisionRequest {
                 ));
             }
             let mut seen = std::collections::HashSet::new();
-            if let Some(d) = ids.iter().find(|i| !valid_id(i) || !seen.insert(**i)) {
+            if let Some(d) = ids.iter().find(|i| !rule.option_id(i) || !seen.insert(**i)) {
                 return bad(format!("question `{id}`: invalid or duplicate id `{d}`"));
             }
         }
         Ok(())
+    }
+}
+
+/// Which ids a provider accepts.
+#[derive(Clone, Copy)]
+pub(crate) enum IdRule {
+    /// `[a-z0-9_]{1,64}` everywhere.
+    Strict,
+    /// Gemini: question keys `[A-Za-z0-9_-]{1,128}`; option and level keys any
+    /// text up to 128 chars and 512 bytes.
+    Gemini,
+}
+
+impl IdRule {
+    fn question_id(self, s: &str) -> bool {
+        match self {
+            IdRule::Strict => valid_id(s),
+            IdRule::Gemini => {
+                (1..=128).contains(&s.len())
+                    && s.bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+            }
+        }
+    }
+
+    fn option_id(self, s: &str) -> bool {
+        match self {
+            IdRule::Strict => valid_id(s),
+            IdRule::Gemini => !s.is_empty() && s.chars().count() <= 128 && s.len() <= 512,
+        }
     }
 }
 

@@ -311,3 +311,77 @@ fn other_providers_reject_gemini_extras() {
         );
     }
 }
+
+#[test]
+fn gemini_uri_media_and_wider_documents() {
+    let body = gemini_build(serde_json::json!({
+        "input": "x",
+        "media": [
+            { "mime_type": "text/csv", "uri": "https://example.com/a.csv" },
+            { "mime_type": "image/png", "uri": "https://generativelanguage.googleapis.com/v1beta/files/abc",
+              "options": { "resolution": "high" } }
+        ],
+        "questions": { "Q-1": { "kind": "yesno", "instructions": "?" } }
+    }))
+    .unwrap();
+    assert_eq!(body["input"][1]["type"], "document");
+    assert_eq!(body["input"][1]["uri"], "https://example.com/a.csv");
+    assert!(body["input"][1].get("data").is_none());
+    assert_eq!(body["input"][2]["resolution"], "high");
+    assert!(body["questions"].get("Q-1").is_some());
+}
+
+#[test]
+fn gemini_rejects_bad_uris_and_missing_source() {
+    for uri in [
+        "gs://b/o",
+        "https://www.youtube.com/watch?v=1",
+        "http://x.com/a.png",
+    ] {
+        let err = gemini_build(serde_json::json!({
+            "input": "x",
+            "media": [{ "mime_type": "image/png", "uri": uri }],
+            "questions": { "q": { "kind": "yesno", "instructions": "?" } }
+        }))
+        .unwrap_err();
+        assert_eq!(err.code, ErrorCode::Unsupported, "{uri}");
+    }
+    let err = gemini_build(serde_json::json!({
+        "input": "x",
+        "media": [{ "mime_type": "image/png" }],
+        "questions": { "q": { "kind": "yesno", "instructions": "?" } }
+    }))
+    .unwrap_err();
+    assert_eq!(err.code, ErrorCode::InvalidRequest);
+}
+
+#[test]
+fn gemini_context_limit_and_wide_option_ids() {
+    let err = gemini_build(serde_json::json!({
+        "input": "x".repeat(1_100_000),
+        "questions": { "q": { "kind": "yesno", "instructions": "?" } }
+    }))
+    .unwrap_err();
+    assert_eq!(err.code, ErrorCode::Unsupported);
+    gemini_build(serde_json::json!({
+        "input": "x",
+        "questions": { "q": { "kind": "choice", "instructions": "?",
+                              "options": { "Option A": "a", "b-2": "b" } } }
+    }))
+    .unwrap();
+}
+
+#[test]
+fn other_providers_reject_uri_media() {
+    let req: DecisionRequest = serde_json::from_value(serde_json::json!({
+        "input": "x",
+        "media": [{ "mime_type": "image/png", "uri": "https://example.com/a.png" }],
+        "questions": { "q": { "kind": "yesno", "instructions": "?" } }
+    }))
+    .unwrap();
+    let (p, m) = resolve("jev/jev-latest").unwrap();
+    assert_eq!(
+        p.build(m, &req, &Config::default()).unwrap_err().code,
+        ErrorCode::Unsupported
+    );
+}

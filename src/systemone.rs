@@ -12,6 +12,7 @@
 //! (200 + `prompt_feedback.block_reason`, or HTTP 400 + `error.code`) applies
 //! when. Both are handled.
 
+use crate::model::IdRule;
 use crate::provider::{http_error, post};
 use crate::*;
 use serde::{Deserialize, Serialize};
@@ -151,7 +152,15 @@ impl SystemOne {
                             block.insert(k.clone(), v.clone());
                         }
                         block.insert("type".into(), kind.into());
-                        block.insert("data".into(), m.data.clone().into());
+                        match &m.uri {
+                            Some(u) => {
+                                check_gemini_uri(u)?;
+                                block.insert("uri".into(), u.clone().into());
+                            }
+                            None => {
+                                block.insert("data".into(), m.data.clone().into());
+                            }
+                        }
                         block.insert("mime_type".into(), m.mime_type.clone().into());
                         blocks.push(Value::Object(block));
                     }
@@ -246,6 +255,72 @@ fn gemini_option_allowed(kind: &str, key: &str) -> bool {
         _ => &[],
     };
     allowed.contains(&key)
+}
+
+/// Gemini takes Files API URIs and public or signed HTTPS URLs; not YouTube or `gs://`.
+fn check_gemini_uri(u: &str) -> Result<(), Error> {
+    let un = |m: &str| Err(Error::new(ErrorCode::Unsupported, m));
+    if !u.starts_with("https://") {
+        return un("Gemini media URIs must be https:// URLs or Files API URIs");
+    }
+    let host = u[8..].split(['/', '?', '#']).next().unwrap_or("");
+    if host.contains("youtube.com") || host.contains("youtu.be") {
+        return un("Gemini does not accept YouTube URLs");
+    }
+    Ok(())
+}
+
+/// Gemini's context window, in tokens.
+const GEMINI_CONTEXT_TOKENS: usize = 262_144;
+
+/// Lower-bound token estimate (UTF-8 bytes / 4) of text input and questions.
+/// Media is not counted, so this only catches requests that are certainly too big.
+fn check_gemini_context(req: &DecisionRequest) -> Result<(), Error> {
+    let mut bytes = match &req.input {
+        Value::String(s) => s.len(),
+        other => other.to_string().len(),
+    };
+    for (id, q) in &req.questions {
+        bytes += id.len();
+        bytes += match q {
+            Question::YesNo {
+                instructions,
+                yes_description,
+                no_description,
+            } => {
+                instructions.len()
+                    + yes_description.as_ref().map_or(0, String::len)
+                    + no_description.as_ref().map_or(0, String::len)
+            }
+            Question::Choice {
+                instructions,
+                options,
+            } => {
+                instructions.len()
+                    + options
+                        .iter()
+                        .map(|(k, v)| k.len() + v.len())
+                        .sum::<usize>()
+            }
+            Question::Score {
+                instructions,
+                levels,
+            } => {
+                instructions.len()
+                    + levels
+                        .iter()
+                        .map(|l| l.id.len() + l.description.len())
+                        .sum::<usize>()
+            }
+        };
+    }
+    if bytes / 4 > GEMINI_CONTEXT_TOKENS {
+        return Err(Error::new(
+            ErrorCode::Unsupported,
+            "input and questions exceed Gemini's 262,144-token context",
+        ));
+    }
+    Ok(())
 }
 
 /// Decoded size of a base64 string, without decoding it.
@@ -367,8 +442,11 @@ impl Provider for SystemOne {
         req: &DecisionRequest,
         cfg: &Config,
     ) -> Result<HttpRequest, Error> {
-        req.validate()?;
-        if self.preset != Preset::Gemini {
+        if self.preset == Preset::Gemini {
+            req.validate_with(IdRule::Gemini)?;
+            check_gemini_context(req)?;
+        } else {
+            req.validate()?;
             req.require_no_gemini_extras()?;
         }
         let limits = self.limits();
