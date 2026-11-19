@@ -72,8 +72,8 @@ Two wire families cover everything:
 | Differences by preset | input is `state` (Jev, Clef) or `input` (Gemini); model also in the URL (Clef); key as Bearer or `x-goog-api-key` | |
 | Limits | Clef 64, Gemini 1000 questions; Jev/Clef 10 levels, Gemini 255 options or levels | 400 questions, 10 levels |
 
-Gemini turned out to be a System One preset, not its own adapter: its real
-wire format matches the family (confirmed against Google's official
+Gemini (verified against Google's reference) turned out to be a System One preset, not its own adapter: its real
+wire format matches the family (confirmed against the official
 `create-decision` and `decisions-api` pages, 2026-11-19). `systemone/<model>` plus a `base_url` covers
 any compatible server.
 
@@ -87,6 +87,8 @@ any compatible server.
   the reference showed otherwise.
 - **`Refused` carries no reason.** OpenAI's refusal has none; Gemini blocks the
   whole input. Add a reason when a provider supplies one.
+- **Bindings pass JSON strings.** No per-type codegen: errors come back as
+  data (`{error}`) and the wrapper rethrows. Hand-written `.d.ts` for now.
 - **Images are inline base64 only.** URLs differ per provider (Clef refuses
   them, OpenAI and Jev need data or assets), so one portable form wins.
 - **No capability struct yet.** Limits live in the adapter. Add one when a
@@ -101,7 +103,9 @@ The detailed backlog, including unimplemented Gemini features, is in
 Built only when a real need appears.
 
 - **Input kinds:** audio, video and documents (PDF, Office, CSV; Gemini only so far, inline up to 100 MB, 50 MB for PDF; no YouTube or `gs://`), and image URLs.
-- **Bindings:** generated from `spec/decision.schema.json`.
+- **Bindings:** Python, Swift, Kotlin. TypeScript/WASM exists (`bindings/`).
+  Each binding is thin: JSON in, JSON out, and the host sends the request.
+  A shared `spec/decision.schema.json` waits until a second binding needs it.
 - **Middleware** (opt-in, in the host language): retry, fallback with
   capability routing, hedging, split/merge for over-limit requests, calibration
   (never silent: expose raw and calibrated), shadow, observe hooks.

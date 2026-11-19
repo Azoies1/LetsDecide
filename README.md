@@ -17,7 +17,7 @@ question types (yes/no, choice, score) but disagree on wire format.
 > [Verification status](#verification-status). Image input is supported;
 > audio, video and PDF are not yet. See the [roadmap](#roadmap).
 
-## Usage
+## Usage (Rust)
 
 ```rust,no_run
 use letsdecide::*;
@@ -104,6 +104,31 @@ Keys and request bodies are never included.
 | `ProviderUnavailable` | 5xx | Yes |
 | `BadResponse` | 2xx but the body doesn't parse. Likely an API change | No |
 
+## JavaScript / TypeScript
+
+The same core compiles to WebAssembly (146 KB gzipped) for Node, browsers and
+edge runtimes. The wrapper sends requests with `fetch`.
+
+```js
+import { Client } from "letsdecide";
+
+const client = new Client({ apiKey: process.env.GEMINI_API_KEY });
+
+const result = await client.decide("gemini/gemini-decision-1", {
+  input: "I was charged twice.",
+  questions: {
+    billing: { kind: "yesno", instructions: "Is this about billing?" },
+  },
+});
+
+result.answers.billing; // { kind: "yesno", probability: 0.97 }
+```
+
+Failures throw `LetsDecideError` with `code`, `status`, `retryable` and
+`retryAfterMs`. In Node, pass the WASM bytes: `new Client(cfg, { wasm })`.
+Build and test: `cd bindings/js && npm run build && npm test` (needs the
+`wasm32-unknown-unknown` target and `wasm-bindgen-cli`).
+
 ## Verification status
 
 | Provider | Source of the wire format |
@@ -124,7 +149,7 @@ Built in small steps; each lands only when needed. Details in
 - [x] **M2** OpenAI and Gemini adapters, refusals
 - [x] Verify Gemini against Google's official reference
 - [ ] Audio, video and PDF input (Gemini documents them; not yet in the canonical model). See [docs/future-work.md](docs/future-work.md)
-- [ ] **M3** Bindings (Swift, TypeScript, Python, Kotlin)
+- [ ] **M3** Bindings: [x] TypeScript/WASM, [ ] Python, [ ] Swift, [ ] Kotlin
 - [ ] **M4** Middleware (retry, fallback, split/merge)
 - [ ] **M5** Evaluation (shadow mode, calibration)
 

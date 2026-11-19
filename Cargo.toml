@@ -1,14 +1,23 @@
 [package]
 name = "letsdecide"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "One request shape for every decision API (Jev, Clef, OpenAI, Gemini). Sans-IO core."
 license = "Apache-2.0"
 repository = "https://github.com/azoies1/letsdecide"
 readme = "README.md"
-keywords = ["decisions", "llm", "adapter", "sans-io"]
+keywords = ["llm", "openai", "gemini", "adapter", "sans-io"]
 categories = ["api-bindings"]
+exclude = ["bindings/", ".github/"]
+
+[workspace]
+members = ["bindings/wasm"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+# Small WASM: applies to the bindings; harmless for the library.
+[profile.release]
+opt-level = "s"
+lto = true
