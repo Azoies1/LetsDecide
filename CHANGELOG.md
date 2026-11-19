@@ -7,7 +7,9 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
-- Audio, video and PDF input for Gemini (`media`, replacing `images`).
+- Authentication: OAuth `access_token` for Clef (string, or a function in JS and Python that is called per request so tokens can refresh); Gemini `api_key` is now checked up front. Both fail with `InvalidRequest` before sending if no credential is set.
+- Audio, video and document input for Gemini (`media`, replacing `images`), with `uri` and per-media `options`.
+- Gemini yes/no descriptions and `block_reason` on refused responses.
 - Python binding (PyO3, sync and async clients).
 - JS middleware: `retry`, `fallback`.
 - Shared JSON layer in the core (`letsdecide::json`).

@@ -1,21 +1,31 @@
 export type Json = string | number | boolean | null | Json[] | { [k: string]: Json };
 
 export interface Media {
-  /** `image/*`, `audio/*`, `video/*` or `application/pdf`; non-images: Gemini only. */
+  /** `image/*`, `audio/*`, `video/*` or a document type; non-images: Gemini only. */
   mime_type: string;
-  /** Base64, no `data:` prefix. */
-  data: string;
+  /** Base64, no `data:` prefix. Give `data` or `uri`, not both. */
+  data?: string;
+  /** Gemini only: `https://` URL or Files API URI (not YouTube or `gs://`). */
+  uri?: string;
+  /** Gemini only, passed through (`resolution`, `fps`, `page_options`, ...). */
+  options?: Record<string, Json>;
 }
 
 export type Question =
-  | { kind: "yesno"; instructions: string }
+  | {
+      kind: "yesno";
+      instructions: string;
+      /** What yes / no mean. Gemini only. */
+      yes_description?: string;
+      no_description?: string;
+    }
   | { kind: "choice"; instructions: string; options: Record<string, string> }
   | { kind: "score"; instructions: string; levels: { id: string; description: string }[] };
 
 export interface DecisionRequest {
   input: Json;
   media?: Media[];
-  /** Ids match `[a-z0-9_]{1,64}`. */
+  /** Ids match `[a-z0-9_]{1,64}`; Gemini also allows `[A-Za-z0-9_-]` keys and wider option ids. */
   questions: Record<string, Question>;
 }
 
@@ -29,10 +39,17 @@ export interface DecisionResponse {
   model: string | null;
   answers: Record<string, Answer>;
   input_tokens: number | null;
+  cached_tokens?: number;
+  thought_tokens?: number;
+  /** Present when every answer is `refused` and the provider gave a reason. */
+  block_reason?: string;
 }
 
 export interface ClientConfig {
+  /** Static key. Required for `gemini/*`. */
   apiKey?: string;
+  /** OAuth access token for `clef/*`, or a function returning a fresh one (called per request). Wins over `apiKey`. */
+  accessToken?: string | (() => string | Promise<string>);
   /** Required for `systemone/*`. */
   baseUrl?: string;
   /** Required for `clef/*`. */

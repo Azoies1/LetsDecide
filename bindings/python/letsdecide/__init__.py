@@ -1,5 +1,6 @@
 """One request shape for every decision API. See README.md."""
 
+import inspect
 import json
 from typing import Any
 
@@ -37,14 +38,31 @@ def _httpx():
 
 
 class _Base:
-    def __init__(self, *, api_key=None, base_url=None, account_id=None):
-        self._config = json.dumps(
-            {"api_key": api_key, "base_url": base_url, "account_id": account_id}
+    def __init__(self, *, api_key=None, access_token=None, base_url=None, account_id=None):
+        """`access_token`: OAuth token (Clef) or a callable returning a fresh one,
+        called on every request. Wins over `api_key`."""
+        self._api_key = api_key
+        self._access_token = access_token
+        self._base_url = base_url
+        self._account_id = account_id
+
+    def _config(self, token):
+        return json.dumps(
+            {
+                "api_key": self._api_key,
+                "access_token": token,
+                "base_url": self._base_url,
+                "account_id": self._account_id,
+            }
         )
 
-    def _build(self, model, request):
+    def _token(self):
+        t = self._access_token
+        return t() if callable(t) else t
+
+    def _build(self, model, request, token):
         body = json.dumps(request)
-        http = _unwrap(_core.build(model, body, self._config))
+        http = _unwrap(_core.build(model, body, self._config(token)))
         return body, http
 
     @staticmethod
@@ -68,7 +86,7 @@ class Client(_Base):
 
     def decide(self, model: str, request: dict) -> dict:
         """`model`: "provider/model". `request`: `{input, questions, media?}`."""
-        body, http = self._build(model, request)
+        body, http = self._build(model, request, self._token())
         method, url, kw = _send_args(http)
         return self._parse(model, body, self._http.request(method, url, **kw))
 
@@ -81,6 +99,9 @@ class AsyncClient(_Base):
         self._http = client or _httpx().AsyncClient(timeout=_TIMEOUT)
 
     async def decide(self, model: str, request: dict) -> dict:
-        body, http = self._build(model, request)
+        token = self._token()
+        if inspect.isawaitable(token):
+            token = await token
+        body, http = self._build(model, request, token)
         method, url, kw = _send_args(http)
         return self._parse(model, body, await self._http.request(method, url, **kw))

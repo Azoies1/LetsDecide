@@ -12,10 +12,12 @@ question types (yes/no, choice, score) but disagree on wire format.
 - **Tiny.** Two dependencies (`serde`, `serde_json`). No async runtime.
 - **Honest.** Provider limits surface as errors, not silent degradation.
 
-> **Status: early (v0.2).** Adapters for Jev, Clef, Gemini, OpenAI and any
+> **Status: early (v0.2), not yet published** to crates.io, npm or PyPI.
+> See [docs/future-work.md](docs/future-work.md#release-and-consumer-readiness).
+> Adapters for Jev, Clef, Gemini, OpenAI and any
 > System One compatible server. Wire formats come from public docs; see
-> [Verification status](#verification-status). Image input is supported;
-> audio, video and PDF are not yet. See the [roadmap](#roadmap).
+> [Verification status](#verification-status). Image input works on all but
+> `systemone`; audio, video and PDF on Gemini only. See the [roadmap](#roadmap).
 
 ## Usage (Rust)
 
@@ -55,24 +57,44 @@ println!("{:?}", decision.answers["positive"]);
 | String | Target | Config needed |
 |---|---|---|
 | `jev/<model>` | Jev System One API | `api_key` |
-| `clef/<model>` | Cloudflare Clef | `api_key`, `account_id` |
-| `gemini/gemini-decision-1` | Google Gemini Decisions | `api_key` |
+| `clef/<model>` | Cloudflare Clef | `account_id` plus `access_token` (OAuth) or `api_key` |
+| `gemini/gemini-decision-1` | Google Gemini Decisions | `api_key` (required) |
 | `openai/gpt-6-luna` | OpenAI Decisions | `api_key` |
 | `systemone/<model>` | Any System One compatible server | `base_url`, optional `api_key` |
 
 `input` is a string or any JSON value. Providers that only take text get JSON
 serialised to a string.
 
+### Authentication
+
+- **Gemini:** a static API key (`api_key`), sent as `x-goog-api-key`. Create one in
+  Google AI Studio. A missing key fails with `InvalidRequest` before anything is sent.
+- **Clef:** an OAuth access token (`access_token`, sent as `Authorization: Bearer`)
+  or a plain API token (`api_key`). The token wins if both are set. Clef also needs
+  your Cloudflare `account_id`.
+- **Tokens expire, the core does not refresh them** (it does no I/O). Run your OAuth
+  flow in your app, then in JS pass `accessToken: async () => freshToken()`, in Python
+  `access_token=callable`, or in Rust set `Config.access_token` before each `build`.
+  The function is called on every request, so refresh logic lives in one place.
+- Keys and tokens are redacted from `Debug` output and never appear in errors.
+
+```js
+// Clef with OAuth, Gemini with a key
+const clef = new Client({ accountId: ACCOUNT_ID, accessToken: () => getToken() });
+const gemini = new Client({ apiKey: process.env.GEMINI_API_KEY });
+```
+
 ### Media
 
 Add `media: [{ "mime_type": "image/png", "data": "<base64>" }]` to a request.
-Inline base64 only: it is the one form every provider accepts. The kind
-(image, audio, video, document) comes from the MIME type.
+Use `data` (base64, every provider) or `uri` (Gemini only). The kind (image,
+audio, video, document) comes from the MIME type. Gemini also takes per-media
+`options`, passed through as-is.
 
 | Kind | `gemini` | `openai` | `clef` | `jev` | `systemone` |
 |---|---|---|---|---|---|
 | image | typed `image` blocks | `input_image` data URLs | `images` data URLs, ≤4, PNG/JPEG/WebP | `assets` + placeholders in `state`, PNG/JPEG | no |
-| audio, video, PDF | typed blocks | `Unsupported` | `Unsupported` | `Unsupported` | `Unsupported` |
+| audio, video, document | typed blocks | `Unsupported` | `Unsupported` | `Unsupported` | `Unsupported` |
 
 Jev image requests send the `TypeSafe-Danger-Zone-Images` header and need a
 vision model such as `jev-preview`.
@@ -99,7 +121,7 @@ Keys and request bodies are never included.
 | Code | When | Retryable |
 |---|---|---|
 | `InvalidRequest` | Fails validation (empty questions, bad or duplicate ids, <2 options) or the provider returned 4xx | No |
-| `Unsupported` | Provider can't take this request (Clef >64 questions, Gemini >1000, OpenAI >400, Jev/Clef/OpenAI >10 score levels, Gemini >255 options or levels, unsupported Gemini image type) | No |
+| `Unsupported` | Provider can't take this request (provider limits such as Clef >64 questions or >10 score levels, or a Gemini-only feature on another provider: non-image media, `uri`, `options`, yes/no descriptions) | No |
 | `Auth` | 401 / 403 | No |
 | `RateLimited` | 429; `retry_after_ms` set when the provider sends `Retry-After` | Yes |
 | `ProviderUnavailable` | 5xx | Yes |
@@ -146,9 +168,10 @@ are plain `(next) => decide` wrappers. See [bindings/js/MIDDLEWARE.md](bindings/
 ## Python
 
 ```python
-from letsdecide import Client  # pip install "letsdecide[httpx]"
+import os
+from letsdecide import Client  # not published yet; build from bindings/python
 
-res = Client(api_key="...").decide("jev/jev-latest", request)
+res = Client(api_key=os.environ["JEV_API_KEY"]).decide("jev/jev-latest", request)
 ```
 
 Sync `Client` and `AsyncClient`, both over `httpx`. See
@@ -161,7 +184,7 @@ Sync `Client` and `AsyncClient`, both over `httpx`. See
 | OpenAI | OpenAI's API reference |
 | Jev | Jev's official OpenAPI spec (`api.typesafe.ai/openapi.json`) |
 | Clef | Cloudflare's official Clef docs |
-| Gemini | Google's official pages, read 2026-11-19: [create-decision](https://aistudio.google.com/api-reference/decisions/create-decision) and [decisions-api](https://aistudio.google.com/docs/decisions-api). Endpoint, `x-goog-api-key`, request and response shapes, limits and image MIME types match. Confirmed live (2026-11-19): replies carry no top-level `model`. Unverified: which safety-block shape applies when (both handled), and the exact 429 body. Audio, video and document input are documented but not implemented |
+| Gemini | Google's [create-decision](https://aistudio.google.com/api-reference/decisions/create-decision) and [decisions-api](https://aistudio.google.com/docs/decisions-api) pages, read 2026-11-19. Unverified live: see [docs/future-work.md](docs/future-work.md) |
 
 Fixtures in `tests/fixtures/` encode these shapes. Corrections welcome.
 
@@ -173,7 +196,7 @@ Built in small steps; each lands only when needed. Details in
 - [x] **M1** Canonical model, sans-IO core, System One adapter, golden fixtures
 - [x] **M2** OpenAI and Gemini adapters, refusals
 - [x] Verify Gemini against Google's official reference
-- [x] Audio, video and PDF input (Gemini, inline). URLs and per-media options: [docs/future-work.md](docs/future-work.md)
+- [x] Audio, video and document input, URIs and per-media options (Gemini)
 - [x] **M3** Bindings: TypeScript/WASM, Python. Swift and Kotlin when asked for
 - [x] **M4** Retry and fallback (JS). Next: hedging, split/merge, shadow, calibration, observe
 - [ ] **M5** Evaluation (shadow mode, calibration)

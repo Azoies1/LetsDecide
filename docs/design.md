@@ -43,7 +43,7 @@ See `src/model.rs`.
 - Questions are keyed by id; answers come back by the same id.
 - Option and level ids are app-chosen and returned unchanged.
 - Probabilities pass through untouched.
-- Ids match `[a-z0-9_]{1,64}`.
+- Ids match `[a-z0-9_]{1,64}`; Gemini allows `[A-Za-z0-9_-]{1,128}`.
 
 ## Provider interface
 
@@ -79,6 +79,8 @@ any compatible server.
 
 ## Decisions made
 
+Numbered records live in [adr/](adr/README.md); the list below is the original summary.
+
 - **Rust core.** One codebase for every provider mapping; bindings are generated
   later (UniFFI, napi-rs, PyO3, wasm-bindgen). Fallback if too heavy: TypeScript
   + Swift sharing the same JSON fixtures.
@@ -89,10 +91,9 @@ any compatible server.
   whole input. Add a reason when a provider supplies one.
 - **Bindings pass JSON strings.** No per-type codegen: errors come back as
   data (`{error}`) and the wrapper rethrows. Hand-written `.d.ts` for now.
-- **One `media` list, kind from MIME, inline base64 only.** Non-image kinds
-  are Gemini-only; other providers return `Unsupported`. URLs differ per
-  provider (Clef refuses them, OpenAI and Jev need data or assets), so one
-  portable form wins.
+- **One `media` list, kind from MIME.** Inline `data` is portable. `uri`,
+  `options` and non-image kinds are Gemini-only; other providers return
+  `Unsupported`. Gemini-specific rules live in `src/gemini.rs`.
 - **JSON layer lives in the core** (`src/json.rs`); every binding is a thin
   wrapper that only adds a transport.
 - **Middleware is `(next) => decide`, in the host language.** Retry and
@@ -108,7 +109,7 @@ The detailed backlog, including unimplemented Gemini features, is in
 
 Built only when a real need appears.
 
-- **Input kinds:** audio, video and documents (PDF, Office, CSV; Gemini only so far, inline up to 100 MB, 50 MB for PDF; no YouTube or `gs://`), and image URLs.
+- **Input kinds:** image URLs on providers other than Gemini.
 - **Bindings:** Python, Swift, Kotlin. TypeScript/WASM exists (`bindings/`).
   Each binding is thin: JSON in, JSON out, and the host sends the request.
   A shared `spec/decision.schema.json` waits until a second binding needs it.

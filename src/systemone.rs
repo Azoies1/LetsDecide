@@ -13,6 +13,7 @@
 //! `prompt_feedback.block_reason`, or HTTP 400 + `error.code`) applies when.
 //! Both are handled.
 
+use crate::gemini;
 use crate::provider::{http_error, post};
 use crate::*;
 use serde::{Deserialize, Serialize};
@@ -76,6 +77,19 @@ impl SystemOne {
         })
     }
 
+    /// Gemini needs `api_key`; Clef needs `api_key` or an OAuth `access_token`.
+    /// Fails before any request is built instead of surfacing a late 401.
+    fn require_credentials(&self, cfg: &Config) -> Result<(), Error> {
+        let need = |m: &str| Err(Error::new(ErrorCode::InvalidRequest, m));
+        match self.preset {
+            Preset::Gemini if cfg.api_key.is_none() => need("api_key is required for gemini"),
+            Preset::Clef if cfg.api_key.is_none() && cfg.access_token.is_none() => {
+                need("api_key or access_token is required for clef")
+            }
+            _ => Ok(()),
+        }
+    }
+
     /// Documented per-request caps.
     fn limits(&self) -> Limits {
         const NONE: usize = usize::MAX;
@@ -112,39 +126,14 @@ impl SystemOne {
     ) -> Result<(), Error> {
         let unsupported = |m: &str| Err(Error::new(ErrorCode::Unsupported, m));
         let media = &req.media;
-        if self.preset == Preset::Gemini
-            && media
-                .iter()
-                .any(|m| m.is_image() && !GEMINI_IMAGE_MIME.contains(&m.mime_type.as_str()))
-        {
-            return unsupported("Gemini does not accept this image MIME type");
-        }
         body.state = Some(Cow::Borrowed(&req.input));
         if self.preset != Preset::Gemini {
             req.require_images_only()?;
         }
         match self.preset {
-            // Typed blocks; text-only input stays a plain string. JSON goes as text.
             Preset::Gemini => {
                 body.state = None;
-                let text = match &req.input {
-                    Value::String(_) => req.input.clone(),
-                    other => Value::String(other.to_string()),
-                };
-                body.input = Some(if media.is_empty() {
-                    text
-                } else {
-                    let mut blocks = vec![json!({ "type": "text", "text": text })];
-                    for m in media {
-                        let Some(kind) = m.kind() else {
-                            return unsupported(&format!("unsupported media `{}`", m.mime_type));
-                        };
-                        blocks.push(
-                            json!({ "type": kind, "data": m.data, "mime_type": m.mime_type }),
-                        );
-                    }
-                    Value::Array(blocks)
-                });
+                body.input = Some(gemini::input(req)?);
             }
             Preset::Clef => {
                 if media.len() > 4 {
@@ -201,27 +190,6 @@ struct Limits {
     levels: usize,
 }
 
-/// Image MIME types Gemini Decisions accepts (decisions-api, "Input").
-const GEMINI_IMAGE_MIME: [&str; 8] = [
-    "image/png",
-    "image/jpeg",
-    "image/webp",
-    "image/heic",
-    "image/heif",
-    "image/gif",
-    "image/bmp",
-    "image/tiff",
-];
-
-/// `error.code` values that mean the input was blocked (decisions-api, "Request").
-const GEMINI_BLOCK_CODES: [&str; 5] = [
-    "safety",
-    "prohibited_content",
-    "blocklist",
-    "image_safety",
-    "content_blocked",
-];
-
 // Request wire types, borrowed so the body is serialised straight to one buffer.
 #[derive(Serialize)]
 struct Body<'a> {
@@ -241,10 +209,20 @@ struct Body<'a> {
 }
 
 #[derive(Serialize)]
+struct NoulCriteria<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    true_description: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    false_description: Option<&'a str>,
+}
+
+#[derive(Serialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 enum Wire<'a> {
     Noul {
         instructions: &'a str,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        criteria: Option<NoulCriteria<'a>>,
     },
     Choice {
         instructions: &'a str,
@@ -277,6 +255,7 @@ struct Usage {
 #[derive(Deserialize)]
 struct PromptFeedback {
     block_reason: Option<String>,
+    block_reason_message: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -296,7 +275,12 @@ impl Provider for SystemOne {
         req: &DecisionRequest,
         cfg: &Config,
     ) -> Result<HttpRequest, Error> {
-        req.validate()?;
+        if self.preset == Preset::Gemini {
+            req.validate_with(gemini::id_ok)?;
+        } else {
+            req.validate()?;
+            req.require_portable()?;
+        }
         let limits = self.limits();
         let unsupported = |m: String| Err(Error::new(ErrorCode::Unsupported, m));
         if req.questions.len() > limits.questions {
@@ -321,7 +305,18 @@ impl Provider for SystemOne {
             .iter()
             .map(|(id, q)| {
                 let wire = match q {
-                    Question::YesNo { instructions } => Wire::Noul { instructions },
+                    Question::YesNo {
+                        instructions,
+                        yes_description,
+                        no_description,
+                    } => Wire::Noul {
+                        instructions,
+                        criteria: (yes_description.is_some() || no_description.is_some())
+                            .then_some(NoulCriteria {
+                                true_description: yes_description.as_deref(),
+                                false_description: no_description.as_deref(),
+                            }),
+                    },
                     Question::Choice {
                         instructions,
                         options,
@@ -353,6 +348,7 @@ impl Provider for SystemOne {
         let body = serde_json::to_vec(&body)
             .map_err(|e| Error::new(ErrorCode::InvalidRequest, e.to_string()))?;
         let url = self.url(model, cfg)?;
+        self.require_credentials(cfg)?;
         let mut http = match self.preset {
             Preset::Gemini => post(url, "x-goog-api-key", false, cfg, body),
             _ => post(url, "authorization", true, cfg, body),
@@ -362,8 +358,10 @@ impl Provider for SystemOne {
     }
 
     fn parse(&self, req: &DecisionRequest, res: &HttpResponse) -> Result<DecisionResponse, Error> {
-        if self.preset == Preset::Gemini && res.status == 400 && blocked_by_error(&res.body) {
-            return Ok(refused(req, None, None));
+        if self.preset == Preset::Gemini && res.status == 400 {
+            if let Some(reason) = gemini::blocked_by_error(&res.body) {
+                return Ok(refused(req, None, None, Some(reason)));
+            }
         }
         if !(200..300).contains(&res.status) {
             return Err(http_error(res));
@@ -376,11 +374,14 @@ impl Provider for SystemOne {
         if let Some(inner) = reply.result.take() {
             reply = *inner;
         }
-        let input_tokens = reply.usage.and_then(|u| u.input_tokens);
+        let input_tokens = reply.usage.take().and_then(|u| u.input_tokens);
 
         // Input blocked by a safety filter: nothing was evaluated.
-        if reply.prompt_feedback.and_then(|f| f.block_reason).is_some() {
-            return Ok(refused(req, reply.model, input_tokens));
+        if let Some(f) = reply.prompt_feedback.take() {
+            if let Some(reason) = f.block_reason {
+                let reason = f.block_reason_message.unwrap_or(reason);
+                return Ok(refused(req, reply.model, input_tokens, Some(reason)));
+            }
         }
 
         let mut answers = BTreeMap::new();
@@ -418,6 +419,7 @@ impl Provider for SystemOne {
             model: reply.model,
             answers,
             input_tokens,
+            block_reason: None,
         })
     }
 }
@@ -427,6 +429,7 @@ fn refused(
     req: &DecisionRequest,
     model: Option<String>,
     input_tokens: Option<u32>,
+    block_reason: Option<String>,
 ) -> DecisionResponse {
     DecisionResponse {
         model,
@@ -436,17 +439,6 @@ fn refused(
             .map(|id| (id.clone(), Answer::Refused))
             .collect(),
         input_tokens,
+        block_reason,
     }
-}
-
-/// Gemini's documented HTTP 400 safety shape: `{"error": {"code": "safety", ..}}`.
-fn blocked_by_error(body: &[u8]) -> bool {
-    serde_json::from_slice::<Value>(body)
-        .ok()
-        .and_then(|v| {
-            v["error"]["code"]
-                .as_str()
-                .map(|c| GEMINI_BLOCK_CODES.contains(&c))
-        })
-        .unwrap_or(false)
 }

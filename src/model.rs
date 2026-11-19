@@ -23,18 +23,26 @@ pub struct DecisionRequest {
 pub struct Media {
     /// e.g. `image/png`, `audio/mp3`, `video/mp4`, `application/pdf`.
     pub mime_type: String,
-    /// Base64 bytes, no `data:` prefix.
+    /// Base64 bytes, no `data:` prefix. Empty when `uri` is used.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub data: String,
+    /// `https://` URL or Files API URI instead of `data`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub uri: Option<String>,
+    /// Per-media options (`resolution`, `fps`, ...), passed through.
+    /// `uri` and `options` are Gemini only; others return `Unsupported`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub options: BTreeMap<String, Value>,
 }
 
 impl Media {
-    /// `image`, `audio`, `video` or `document` (PDF), from the MIME type.
+    /// `image`, `audio`, `video` or `document` (PDF, Office, CSV), from the MIME type.
     pub fn kind(&self) -> Option<&'static str> {
         match self.mime_type.split_once('/')?.0 {
             "image" => Some("image"),
             "audio" => Some("audio"),
             "video" => Some("video"),
-            _ if self.mime_type == "application/pdf" => Some("document"),
+            _ if DOCUMENT_MIME.contains(&self.mime_type.as_str()) => Some("document"),
             _ => None,
         }
     }
@@ -48,11 +56,32 @@ impl Media {
     }
 }
 
+/// Documents. Only PDF is confirmed live; the rest are from Gemini's API schema.
+pub(crate) const DOCUMENT_MIME: [&str; 12] = [
+    "application/pdf",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.template",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-powerpoint",
+    "application/msword",
+    "application/vnd.oasis.opendocument.text",
+    "application/vnd.oasis.opendocument.presentation",
+    "application/vnd.oasis.opendocument.spreadsheet",
+    "application/vnd.ms-excel",
+    "text/csv",
+];
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Question {
     YesNo {
         instructions: String,
+        /// What yes and no mean. Gemini only.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        yes_description: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        no_description: Option<String>,
     },
     /// 2..N options, id → description.
     Choice {
@@ -78,6 +107,10 @@ pub struct DecisionResponse {
     pub model: Option<String>,
     pub answers: BTreeMap<Id, Answer>,
     pub input_tokens: Option<u32>,
+    /// Why the input was blocked, when every answer is `Refused` and the
+    /// provider says so.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block_reason: Option<String>,
 }
 
 /// Probabilities are the provider's numbers, never rescaled.
@@ -115,11 +148,42 @@ impl DecisionRequest {
         }
     }
 
+    /// For providers without Gemini-only features: URIs, media options, yes/no descriptions.
+    pub(crate) fn require_portable(&self) -> Result<(), Error> {
+        let un = |m: String| Err(Error::new(ErrorCode::Unsupported, m));
+        if self.media.iter().any(|m| m.uri.is_some()) {
+            return un("URI media is supported by Gemini only".into());
+        }
+        if self.media.iter().any(|m| !m.options.is_empty()) {
+            return un("per-media options are supported by Gemini only".into());
+        }
+        let described = self.questions.values().any(|q| {
+            matches!(q, Question::YesNo { yes_description, no_description, .. }
+                if yes_description.is_some() || no_description.is_some())
+        });
+        if described {
+            return un("yes/no descriptions are supported by Gemini only".into());
+        }
+        Ok(())
+    }
+
     /// Provider-independent checks. Providers add their own limits.
     pub fn validate(&self) -> Result<(), Error> {
+        self.validate_with(valid_id)
+    }
+
+    /// As `validate`, with the provider's id rule (applies to every id).
+    pub(crate) fn validate_with(&self, valid_id: fn(&str) -> bool) -> Result<(), Error> {
         let bad = |m: String| Err(Error::new(ErrorCode::InvalidRequest, m));
         if self.questions.is_empty() {
             return bad("no questions".into());
+        }
+        for m in &self.media {
+            match (m.data.is_empty(), &m.uri) {
+                (true, None) => return bad("media needs `data` or `uri`".into()),
+                (false, Some(_)) => return bad("media takes `data` or `uri`, not both".into()),
+                _ => {}
+            }
         }
         for (id, q) in &self.questions {
             if !valid_id(id) {
@@ -145,7 +209,7 @@ impl DecisionRequest {
 }
 
 /// `[a-z0-9_]{1,64}`
-fn valid_id(s: &str) -> bool {
+pub(crate) fn valid_id(s: &str) -> bool {
     (1..=64).contains(&s.len())
         && s.bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
