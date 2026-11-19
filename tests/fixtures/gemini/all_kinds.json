@@ -129,7 +129,8 @@
           "probabilities": {
             "billing": 0.75,
             "shipping": 0.25
-          }
+          },
+          "confidence_source": "provider"
         },
         "severity": {
           "kind": "score",
@@ -138,7 +139,8 @@
           "probabilities": {
             "low": 0.25,
             "high": 0.75
-          }
+          },
+          "confidence_source": "provider"
         }
       }
     }

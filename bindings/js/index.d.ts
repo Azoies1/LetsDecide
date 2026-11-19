@@ -5,7 +5,7 @@ export interface Media {
   mime_type: string;
   /** Base64, no `data:` prefix. Give `data` or `uri`, not both. */
   data?: string;
-  /** Gemini only: `https://` URL or Files API URI (not YouTube or `gs://`). */
+  /** Gemini: `https://` URL or Files API URI (not YouTube or `gs://`). OpenAI: public `http(s)://` image URL. */
   uri?: string;
   /** Gemini only, passed through (`resolution`, `fps`, `page_options`, ...). */
   options?: Record<string, Json>;
@@ -27,12 +27,17 @@ export interface DecisionRequest {
   media?: Media[];
   /** Ids match `[a-z0-9_]{1,64}`; Gemini also allows `[A-Za-z0-9_-]` keys and wider option ids. */
   questions: Record<string, Question>;
+  /** Extra top-level body fields, sent as-is. Keys the adapter sets are rejected. */
+  provider_extras?: Record<string, Json>;
 }
+
+/** `provider`: sent by the provider. `probabilities`: not sent, read off the chosen option or top level. */
+export type ConfidenceSource = "provider" | "probabilities";
 
 export type Answer =
   | { kind: "yesno"; probability: number }
-  | { kind: "choice"; choice: string; confidence: number | null; probabilities: Record<string, number> }
-  | { kind: "score"; value: number; confidence: number | null; probabilities: Record<string, number> }
+  | { kind: "choice"; choice: string; confidence: number | null; confidence_source?: ConfidenceSource; probabilities: Record<string, number> }
+  | { kind: "score"; value: number; confidence: number | null; confidence_source?: ConfidenceSource; probabilities: Record<string, number> }
   | { kind: "refused" };
 
 export interface DecisionResponse {
