@@ -1,0 +1,15 @@
+{
+  "name": "letsdecide",
+  "version": "0.2.0",
+  "description": "One request shape for every decision API (Jev, Clef, OpenAI, Gemini). WebAssembly core.",
+  "license": "Apache-2.0",
+  "repository": "github:azoies1/letsdecide",
+  "type": "module",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": ["index.js", "index.d.ts", "pkg"],
+  "scripts": {
+    "build": "cargo build -p letsdecide-wasm --target wasm32-unknown-unknown --release && wasm-bindgen --target web --out-dir pkg ../../target/wasm32-unknown-unknown/release/letsdecide_wasm.wasm",
+    "test": "node --test test/*.test.js"
+  }
+}

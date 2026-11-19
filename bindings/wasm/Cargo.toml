@@ -1,0 +1,16 @@
+[package]
+name = "letsdecide-wasm"
+version = "0.2.0"
+edition = "2021"
+description = "WebAssembly binding for letsdecide"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+letsdecide = { path = "../.." }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+wasm-bindgen = "0.2"
