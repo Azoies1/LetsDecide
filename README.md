@@ -66,13 +66,14 @@ serialised to a string.
 ### Media
 
 Add `media: [{ "mime_type": "image/png", "data": "<base64>" }]` to a request.
-Inline base64 only: it is the one form every provider accepts. The kind
-(image, audio, video, document) comes from the MIME type.
+Use `data` (base64, every provider) or `uri` (Gemini only). The kind (image,
+audio, video, document) comes from the MIME type. Gemini also takes per-media
+`options`, passed through as-is.
 
 | Kind | `gemini` | `openai` | `clef` | `jev` | `systemone` |
 |---|---|---|---|---|---|
 | image | typed `image` blocks | `input_image` data URLs | `images` data URLs, ≤4, PNG/JPEG/WebP | `assets` + placeholders in `state`, PNG/JPEG | no |
-| audio, video, PDF | typed blocks | `Unsupported` | `Unsupported` | `Unsupported` | `Unsupported` |
+| audio, video, document | typed blocks | `Unsupported` | `Unsupported` | `Unsupported` | `Unsupported` |
 
 Jev image requests send the `TypeSafe-Danger-Zone-Images` header and need a
 vision model such as `jev-preview`.
@@ -99,7 +100,7 @@ Keys and request bodies are never included.
 | Code | When | Retryable |
 |---|---|---|
 | `InvalidRequest` | Fails validation (empty questions, bad or duplicate ids, <2 options) or the provider returned 4xx | No |
-| `Unsupported` | Provider can't take this request (Clef >64 questions, Gemini >1000, OpenAI >400, Jev/Clef/OpenAI >10 score levels, Gemini >255 options or levels, unsupported Gemini image type) | No |
+| `Unsupported` | Provider can't take this request (provider limits such as Clef >64 questions or >10 score levels, or a Gemini-only feature on another provider: non-image media, `uri`, `options`, yes/no descriptions) | No |
 | `Auth` | 401 / 403 | No |
 | `RateLimited` | 429; `retry_after_ms` set when the provider sends `Retry-After` | Yes |
 | `ProviderUnavailable` | 5xx | Yes |
@@ -161,7 +162,7 @@ Sync `Client` and `AsyncClient`, both over `httpx`. See
 | OpenAI | OpenAI's API reference |
 | Jev | Jev's official OpenAPI spec (`api.typesafe.ai/openapi.json`) |
 | Clef | Cloudflare's official Clef docs |
-| Gemini | Google's official pages, read 2026-11-19: [create-decision](https://aistudio.google.com/api-reference/decisions/create-decision) and [decisions-api](https://aistudio.google.com/docs/decisions-api). Endpoint, `x-goog-api-key`, request and response shapes, limits and image MIME types match. Unverified: a top-level `model` in replies, which safety-block shape applies when (both handled), and the exact 429 body. Audio, video, document, URI input and per-media options are implemented |
+| Gemini | Google's [create-decision](https://aistudio.google.com/api-reference/decisions/create-decision) and [decisions-api](https://aistudio.google.com/docs/decisions-api) pages, read 2026-11-19. Unverified live: see [docs/future-work.md](docs/future-work.md) |
 
 Fixtures in `tests/fixtures/` encode these shapes. Corrections welcome.
 
@@ -173,7 +174,7 @@ Built in small steps; each lands only when needed. Details in
 - [x] **M1** Canonical model, sans-IO core, System One adapter, golden fixtures
 - [x] **M2** OpenAI and Gemini adapters, refusals
 - [x] Verify Gemini against Google's official reference
-- [x] Audio, video and PDF input (Gemini, inline). URLs and per-media options: [docs/future-work.md](docs/future-work.md)
+- [x] Audio, video and document input, URIs and per-media options (Gemini)
 - [x] **M3** Bindings: TypeScript/WASM, Python. Swift and Kotlin when asked for
 - [x] **M4** Retry and fallback (JS). Next: hedging, split/merge, shadow, calibration, observe
 - [ ] **M5** Evaluation (shadow mode, calibration)

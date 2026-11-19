@@ -1,15 +1,13 @@
 export type Json = string | number | boolean | null | Json[] | { [k: string]: Json };
 
 export interface Media {
-  /** `image/*`, `audio/*`, `video/*`, `application/pdf` or (Gemini, untested live) Office/CSV; non-images: Gemini only. */
+  /** `image/*`, `audio/*`, `video/*` or a document type; non-images: Gemini only. */
   mime_type: string;
   /** Base64, no `data:` prefix. Give `data` or `uri`, not both. */
   data?: string;
   /** Gemini only: `https://` URL or Files API URI (not YouTube or `gs://`). */
   uri?: string;
-  /** Gemini only. image: `resolution`; audio: `channels`, `sample_rate`, `processing`;
-   * video: `resolution`, `fps`, `start_offset`, `end_offset`, `processing`, `name`;
-   * document: `page_options`, `spreadsheet_options`. */
+  /** Gemini only, passed through (`resolution`, `fps`, `page_options`, ...). */
   options?: Record<string, Json>;
 }
 

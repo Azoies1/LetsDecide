@@ -274,14 +274,14 @@ fn gemini_media_options_and_noul_criteria() {
 }
 
 #[test]
-fn gemini_rejects_wrong_option_for_kind() {
-    let err = gemini_build(serde_json::json!({
+fn gemini_office_docs_are_not_capped_as_pdf() {
+    let big = "A".repeat(70 * 1024 * 1024 * 4 / 3);
+    gemini_build(serde_json::json!({
         "input": "x",
-        "media": [{ "mime_type": "image/png", "data": "AAAA", "options": { "fps": 2 } }],
+        "media": [{ "mime_type": "text/csv", "data": big }],
         "questions": { "q": { "kind": "yesno", "instructions": "?" } }
     }))
-    .unwrap_err();
-    assert_eq!(err.code, ErrorCode::Unsupported);
+    .unwrap();
 }
 
 #[test]
@@ -336,6 +336,7 @@ fn gemini_rejects_bad_uris_and_missing_source() {
     for uri in [
         "gs://b/o",
         "https://www.youtube.com/watch?v=1",
+        "https://youtu.be/x",
         "http://x.com/a.png",
     ] {
         let err = gemini_build(serde_json::json!({
@@ -356,17 +357,11 @@ fn gemini_rejects_bad_uris_and_missing_source() {
 }
 
 #[test]
-fn gemini_context_limit_and_wide_option_ids() {
-    let err = gemini_build(serde_json::json!({
-        "input": "x".repeat(1_100_000),
-        "questions": { "q": { "kind": "yesno", "instructions": "?" } }
-    }))
-    .unwrap_err();
-    assert_eq!(err.code, ErrorCode::Unsupported);
+fn gemini_wide_ids() {
     gemini_build(serde_json::json!({
         "input": "x",
         "questions": { "q": { "kind": "choice", "instructions": "?",
-                              "options": { "Option A": "a", "b-2": "b" } } }
+                              "options": { "Option-A": "a", "b-2": "b" } } }
     }))
     .unwrap();
 }

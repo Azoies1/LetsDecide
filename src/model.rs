@@ -24,14 +24,13 @@ pub struct Media {
     /// e.g. `image/png`, `audio/mp3`, `video/mp4`, `application/pdf`.
     pub mime_type: String,
     /// Base64 bytes, no `data:` prefix. Empty when `uri` is used.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub data: String,
-    /// Public or signed `https://` URL, or a Gemini Files API URI, instead of
-    /// `data`. Gemini only.
+    /// `https://` URL or Files API URI instead of `data`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub uri: Option<String>,
-    /// Per-media options, e.g. `resolution`, `fps`, `start_offset`. Gemini
-    /// only; other providers return `Unsupported` when this is set.
+    /// Per-media options (`resolution`, `fps`, ...), passed through.
+    /// `uri` and `options` are Gemini only; others return `Unsupported`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub options: BTreeMap<String, Value>,
 }
@@ -57,8 +56,7 @@ impl Media {
     }
 }
 
-/// Document MIME types. Only PDF is confirmed by Gemini's guide page; the rest
-/// come from its API schema and are untested against the live API.
+/// Documents. Only PDF is confirmed live; the rest are from Gemini's API schema.
 pub(crate) const DOCUMENT_MIME: [&str; 12] = [
     "application/pdf",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -79,7 +77,7 @@ pub(crate) const DOCUMENT_MIME: [&str; 12] = [
 pub enum Question {
     YesNo {
         instructions: String,
-        /// What "yes" and "no" mean. Gemini only; others return `Unsupported`.
+        /// What yes and no mean. Gemini only.
         #[serde(default, skip_serializing_if = "Option::is_none")]
         yes_description: Option<String>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -109,12 +107,6 @@ pub struct DecisionResponse {
     pub model: Option<String>,
     pub answers: BTreeMap<Id, Answer>,
     pub input_tokens: Option<u32>,
-    /// Tokens served from cache, when the provider reports them.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cached_tokens: Option<u32>,
-    /// Reasoning tokens, when the provider reports them.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub thought_tokens: Option<u32>,
     /// Why the input was blocked, when every answer is `Refused` and the
     /// provider says so.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -156,8 +148,8 @@ impl DecisionRequest {
         }
     }
 
-    /// For providers that ignore per-media options and yes/no descriptions.
-    pub(crate) fn require_no_gemini_extras(&self) -> Result<(), Error> {
+    /// For providers without Gemini-only features: URIs, media options, yes/no descriptions.
+    pub(crate) fn require_portable(&self) -> Result<(), Error> {
         let un = |m: String| Err(Error::new(ErrorCode::Unsupported, m));
         if self.media.iter().any(|m| m.uri.is_some()) {
             return un("URI media is supported by Gemini only".into());
@@ -177,11 +169,11 @@ impl DecisionRequest {
 
     /// Provider-independent checks. Providers add their own limits.
     pub fn validate(&self) -> Result<(), Error> {
-        self.validate_with(IdRule::Strict)
+        self.validate_with(valid_id)
     }
 
-    /// As `validate`, with the id rule the provider allows.
-    pub(crate) fn validate_with(&self, rule: IdRule) -> Result<(), Error> {
+    /// As `validate`, with the provider's id rule (applies to every id).
+    pub(crate) fn validate_with(&self, valid_id: fn(&str) -> bool) -> Result<(), Error> {
         let bad = |m: String| Err(Error::new(ErrorCode::InvalidRequest, m));
         if self.questions.is_empty() {
             return bad("no questions".into());
@@ -194,7 +186,7 @@ impl DecisionRequest {
             }
         }
         for (id, q) in &self.questions {
-            if !rule.question_id(id) {
+            if !valid_id(id) {
                 return bad(format!("invalid question id `{id}`"));
             }
             let ids: Vec<&str> = match q {
@@ -208,7 +200,7 @@ impl DecisionRequest {
                 ));
             }
             let mut seen = std::collections::HashSet::new();
-            if let Some(d) = ids.iter().find(|i| !rule.option_id(i) || !seen.insert(**i)) {
+            if let Some(d) = ids.iter().find(|i| !valid_id(i) || !seen.insert(**i)) {
                 return bad(format!("question `{id}`: invalid or duplicate id `{d}`"));
             }
         }
@@ -216,38 +208,8 @@ impl DecisionRequest {
     }
 }
 
-/// Which ids a provider accepts.
-#[derive(Clone, Copy)]
-pub(crate) enum IdRule {
-    /// `[a-z0-9_]{1,64}` everywhere.
-    Strict,
-    /// Gemini: question keys `[A-Za-z0-9_-]{1,128}`; option and level keys any
-    /// text up to 128 chars and 512 bytes.
-    Gemini,
-}
-
-impl IdRule {
-    fn question_id(self, s: &str) -> bool {
-        match self {
-            IdRule::Strict => valid_id(s),
-            IdRule::Gemini => {
-                (1..=128).contains(&s.len())
-                    && s.bytes()
-                        .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
-            }
-        }
-    }
-
-    fn option_id(self, s: &str) -> bool {
-        match self {
-            IdRule::Strict => valid_id(s),
-            IdRule::Gemini => !s.is_empty() && s.chars().count() <= 128 && s.len() <= 512,
-        }
-    }
-}
-
 /// `[a-z0-9_]{1,64}`
-fn valid_id(s: &str) -> bool {
+pub(crate) fn valid_id(s: &str) -> bool {
     (1..=64).contains(&s.len())
         && s.bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
