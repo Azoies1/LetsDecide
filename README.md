@@ -12,10 +12,12 @@ question types (yes/no, choice, score) but disagree on wire format.
 - **Tiny.** Two dependencies (`serde`, `serde_json`). No async runtime.
 - **Honest.** Provider limits surface as errors, not silent degradation.
 
-> **Status: early (v0.2).** Adapters for Jev, Clef, Gemini, OpenAI and any
+> **Status: early (v0.2), not yet published** to crates.io, npm or PyPI.
+> See [docs/future-work.md](docs/future-work.md#release-and-consumer-readiness).
+> Adapters for Jev, Clef, Gemini, OpenAI and any
 > System One compatible server. Wire formats come from public docs; see
-> [Verification status](#verification-status). Image input is supported;
-> audio, video and PDF are not yet. See the [roadmap](#roadmap).
+> [Verification status](#verification-status). Image input works on all but
+> `systemone`; audio, video and PDF on Gemini only. See the [roadmap](#roadmap).
 
 ## Usage (Rust)
 
@@ -146,9 +148,10 @@ are plain `(next) => decide` wrappers. See [bindings/js/MIDDLEWARE.md](bindings/
 ## Python
 
 ```python
-from letsdecide import Client  # pip install "letsdecide[httpx]"
+import os
+from letsdecide import Client  # not published yet; build from bindings/python
 
-res = Client(api_key="...").decide("jev/jev-latest", request)
+res = Client(api_key=os.environ["JEV_API_KEY"]).decide("jev/jev-latest", request)
 ```
 
 Sync `Client` and `AsyncClient`, both over `httpx`. See

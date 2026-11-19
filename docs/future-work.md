@@ -66,3 +66,25 @@ inline base64 `media`. Gemini also accepts, as typed content blocks in `input`:
 - [ ] **M5** Evaluation (shadow mode, calibration)
 - [ ] Image URLs as input; `confidence_source`; cost estimates; live nightly
   contract tests (see "Planned" in `design.md`).
+
+## Release and consumer readiness
+
+Nothing is published yet (crate, npm, PyPI), so no install command in the docs
+works today.
+
+- [ ] Publish the Rust crate to crates.io.
+- [ ] Publish the npm package (`letsdecide`) with the WASM build.
+- [ ] Publish the Python package to PyPI (wheels via maturin).
+- [ ] README "Quickstart" with install lines per language (mark "not yet
+  published" until true) and a complete runnable example each, reading keys
+  from environment variables.
+- [ ] README "Get your keys" table: link and env var name per provider.
+- [ ] Runnable Rust example in `examples/` using a real HTTP client (for
+  example `ureq`), so `cargo run --example decide` works.
+- [ ] Show Clef's `account_id` in at least one JS and one Python example.
+- [ ] "Common errors" list mapping `Auth`, `InvalidRequest` and the Node WASM
+  setup to fixes.
+- [ ] Move contributor build steps (wasm target, `wasm-bindgen-cli`) out of
+  the consumer sections.
+- [ ] Capture live Gemini fixtures once an API key is available (see "still
+  unverified" above).
