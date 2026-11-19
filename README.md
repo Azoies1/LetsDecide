@@ -14,8 +14,17 @@ question types (yes/no, choice, score) but disagree on wire format.
 
 > **Status: early (v0.2).** Adapters for Jev, Clef, Gemini, OpenAI and any
 > System One compatible server. Wire formats come from public docs; see
-> [Verification status](#verification-status). Image input is supported;
-> audio, video and PDF are not yet. See the [roadmap](#roadmap).
+> [Verification status](#verification-status). Image input works with every
+> provider except System One; audio, video and PDF with Gemini. See the
+> [roadmap](#roadmap).
+
+## Install
+
+```sh
+cargo add letsdecide              # Rust
+npm install letsdecide            # JavaScript / TypeScript
+pip install "letsdecide[httpx]"   # Python
+```
 
 ## Usage (Rust)
 
@@ -133,7 +142,8 @@ Build and test: `cd bindings/js && npm run build && npm test` (needs the
 ### Middleware (opt-in)
 
 ```js
-import { Client, compose, retry, fallback } from "letsdecide";
+import { Client } from "letsdecide";
+import { compose, retry, fallback } from "letsdecide/middleware.js";
 
 const decide = compose(client, fallback(["jev/jev-latest"]), retry());
 const res = await decide("clef/clef-flash", request);
@@ -161,7 +171,7 @@ Sync `Client` and `AsyncClient`, both over `httpx`. See
 | OpenAI | OpenAI's API reference |
 | Jev | Jev's official OpenAPI spec (`api.typesafe.ai/openapi.json`) |
 | Clef | Cloudflare's official Clef docs |
-| Gemini | Google's official pages, read 2026-11-19: [create-decision](https://aistudio.google.com/api-reference/decisions/create-decision) and [decisions-api](https://aistudio.google.com/docs/decisions-api). Endpoint, `x-goog-api-key`, request and response shapes, limits and image MIME types match. Unverified: a top-level `model` in replies, which safety-block shape applies when (both handled), and the exact 429 body. Audio, video and document input are documented but not implemented |
+| Gemini | Google's official pages, read 2026-11-19: [create-decision](https://aistudio.google.com/api-reference/decisions/create-decision) and [decisions-api](https://aistudio.google.com/docs/decisions-api). Endpoint, `x-goog-api-key`, request and response shapes, limits and image MIME types match. Unverified: a top-level `model` in replies, which safety-block shape applies when (both handled), and the exact 429 body. Audio, video and PDF input are implemented (inline only); URIs and other document types are not |
 
 Fixtures in `tests/fixtures/` encode these shapes. Corrections welcome.
 

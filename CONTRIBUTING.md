@@ -39,3 +39,23 @@ Nothing else should change. If it does, the design needs discussion first.
 ## Commits and PRs
 
 One logical change per PR. Include tests. Describe the behaviour change, not the diff.
+
+## Releasing
+
+One tag publishes all three packages (crates.io, npm, PyPI) under the same
+version. Pushing a tag builds and checks everything first, and only then
+publishes, so a failed build never leaves a half-published release.
+
+1. Set the new version in `Cargo.toml`, `bindings/wasm/Cargo.toml`,
+   `bindings/python/Cargo.toml`, `bindings/js/package.json` and
+   `bindings/python/pyproject.toml`, then run `cargo check` to refresh `Cargo.lock`.
+2. Move the `[Unreleased]` entries in `CHANGELOG.md` under the new version and
+   update the compare links.
+3. Merge, then `git tag v<version> && git push origin v<version>`. The tag must
+   match all five versions or the release stops before building.
+
+Publishing is opt-in per registry (see the top of `.github/workflows/release.yml`):
+`CARGO_REGISTRY_TOKEN` and `NPM_TOKEN` repository secrets, and for PyPI the
+repository variable `PUBLISH_PYPI=true` plus a trusted publisher configured on
+pypi.org. A registry with nothing configured is skipped. Published versions
+can't be deleted, only yanked or deprecated, so check the release run first.

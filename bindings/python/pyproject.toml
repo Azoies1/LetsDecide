@@ -6,9 +6,25 @@ build-backend = "maturin"
 name = "letsdecide"
 version = "0.2.0"
 description = "One request shape for every decision API (Jev, Clef, OpenAI, Gemini). Rust core."
+readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.10"
+keywords = ["llm", "openai", "gemini", "adapter", "decision"]
+classifiers = [
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "Programming Language :: Python :: Implementation :: CPython",
+  "Programming Language :: Rust",
+  "Typing :: Typed",
+]
 dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/azoies1/letsdecide"
+Repository = "https://github.com/azoies1/letsdecide"
+Issues = "https://github.com/azoies1/letsdecide/issues"
+Changelog = "https://github.com/azoies1/letsdecide/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 httpx = ["httpx>=0.25"]
@@ -17,6 +33,8 @@ test = ["pytest", "pytest-asyncio", "httpx>=0.25"]
 [tool.maturin]
 module-name = "letsdecide._core"
 python-source = "."
+# Required for manylinux wheels: the extension must not link libpython.
+features = ["pyo3/extension-module"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
