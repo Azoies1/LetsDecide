@@ -44,19 +44,29 @@
     "status": 200,
     "headers": [],
     "body": {
-      "answers": {
-        "greeting": {
-          "type": "noul",
-          "noul": 0.5,
-          "confidence": 0.5
+      "result": {
+        "model": "clef-flash",
+        "answers": {
+          "greeting": {
+            "type": "noul",
+            "noul": 0.5,
+            "confidence": 0.5
+          }
+        },
+        "usage": {
+          "input_tokens": 212,
+          "output_tokens": 0
         }
-      }
+      },
+      "success": true,
+      "errors": [],
+      "messages": []
     }
   },
   "expected": {
     "ok": {
-      "model": null,
-      "input_tokens": null,
+      "model": "clef-flash",
+      "input_tokens": 212,
       "answers": {
         "greeting": {
           "kind": "yesno",

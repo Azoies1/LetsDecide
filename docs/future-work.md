@@ -10,7 +10,7 @@ Gemini source pages were read on 2026-11-19:
 - [ ] Which safety-block shape the live API uses: `200` with
   `prompt_feedback.block_reason`, or `HTTP 400` with `error.code`. Both are
   handled; capture real responses as fixtures.
-- [ ] Whether replies carry a top-level `model` (parsed if present).
+- [x] Whether replies carry a top-level `model`: no (live call, 2026-11-19; parsed if present).
 - [ ] Body and status of RPM/TPM/RPD rate-limit errors. Docs only give
   `429 RESOURCE_EXHAUSTED` for spend limits.
 - [ ] Office and CSV documents: the guide lists only PDF, the API schema lists

@@ -7,10 +7,11 @@
 //! - https://aistudio.google.com/api-reference/decisions/create-decision
 //! - https://aistudio.google.com/docs/decisions-api
 //!
-//! Still unverified for Gemini: whether replies carry a top-level `model`
-//! (parsed if present), and which of the two documented safety-block shapes
-//! (200 + `prompt_feedback.block_reason`, or HTTP 400 + `error.code`) applies
-//! when. Both are handled.
+//! Checked live (2026-11-19): Gemini replies carry no top-level `model` (so
+//! `DecisionResponse.model` is `None`; it is still parsed if present). Still
+//! unverified: which of the two documented safety-block shapes (200 +
+//! `prompt_feedback.block_reason`, or HTTP 400 + `error.code`) applies when.
+//! Both are handled.
 
 use crate::gemini;
 use crate::provider::{http_error, post};
@@ -236,6 +237,8 @@ enum Wire<'a> {
 // Response wire types.
 #[derive(Deserialize)]
 struct Reply {
+    /// Cloudflare (Clef) wraps the payload: `{"result": {...}, "success": true}`.
+    result: Option<Box<Reply>>,
     model: Option<String>,
     #[serde(default)]
     answers: BTreeMap<Id, RawAnswer>,
@@ -368,6 +371,9 @@ impl Provider for SystemOne {
             ..Error::new(ErrorCode::BadResponse, m)
         };
         let mut reply: Reply = serde_json::from_slice(&res.body).map_err(|e| bad(e.to_string()))?;
+        if let Some(inner) = reply.result.take() {
+            reply = *inner;
+        }
         let input_tokens = reply.usage.take().and_then(|u| u.input_tokens);
 
         // Input blocked by a safety filter: nothing was evaluated.
