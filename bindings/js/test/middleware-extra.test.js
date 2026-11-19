@@ -19,6 +19,7 @@ const wait = (ms, signal) =>
     signal?.addEventListener("abort", () => (clearTimeout(t), reject(err("Aborted"))));
   });
 const answerAll = (model, request) => ({
+  estimated_cost_usd: 0.5,
   model,
   answers: Object.fromEntries(Object.keys(request.questions).map((id) => [id, yes(0.9)])),
   input_tokens: 10,
@@ -71,6 +72,7 @@ test("split: over the provider cap is chunked and merged", async () => {
   assert.equal(Object.keys(res.answers).length, 130);
   assert.equal(res.input_tokens, 30);
   assert.equal(res.parts, 3);
+  assert.equal(res.estimated_cost_usd, 1.5);
 });
 
 test("split: under the cap passes through; custom limits; one failure fails all", async () => {

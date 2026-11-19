@@ -150,7 +150,7 @@ QUESTION_LIMITS = {"clef": 64, "openai": 400, "gemini": 1000}
 
 def split(*, max_questions: int | Callable[[str], int | None] | None = None, concurrency=4) -> Middleware:
     """Splits a request with more questions than the provider's cap (or
-    `max_questions`) and merges the answers. Input tokens are summed."""
+    `max_questions`) and merges the answers. Input tokens and cost are summed."""
 
     def limit(model: str) -> float:
         n = max_questions(model) if callable(max_questions) else max_questions
@@ -196,6 +196,9 @@ def _merge(results: list[dict]) -> dict:
         "input_tokens": None if None in tokens else sum(tokens),
         "parts": len(results),
     }
+    costs = [r.get("estimated_cost_usd") for r in results]
+    if None not in costs:
+        out["estimated_cost_usd"] = sum(costs)
     reason = next((r["block_reason"] for r in results if r.get("block_reason")), None)
     if reason:
         out["block_reason"] = reason

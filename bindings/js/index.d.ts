@@ -44,6 +44,8 @@ export interface DecisionResponse {
   model: string | null;
   answers: Record<string, Answer>;
   input_tokens: number | null;
+  /** From `spec/prices.json`, when the model's price is known. An estimate. */
+  estimated_cost_usd?: number;
   cached_tokens?: number;
   thought_tokens?: number;
   /** Present when every answer is `refused` and the provider gave a reason. */

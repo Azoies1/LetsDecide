@@ -99,8 +99,8 @@ const QUESTION_LIMITS = { clef: 64, openai: 400, gemini: 1000 };
 /**
  * Splits a request with more than `maxQuestions` questions into several and
  * merges the answers. `maxQuestions` is a number or `(model) => number`; by
- * default it is the provider's documented cap. Input tokens are summed: the
- * input is sent (and billed) once per part.
+ * default it is the provider's documented cap. Input tokens and cost are
+ * summed: the input is sent (and billed) once per part.
  */
 export function split({ maxQuestions, concurrency = 4 } = {}) {
   const limit = (model) =>
@@ -148,6 +148,8 @@ function merge(results) {
     input_tokens: sum("input_tokens"),
     parts: results.length,
   };
+  const cost = sum("estimated_cost_usd");
+  if (cost != null) out.estimated_cost_usd = cost;
   const reason = results.find((r) => r.block_reason)?.block_reason;
   if (reason) out.block_reason = reason;
   if (results.some((r) => r.attempts)) out.attempts = results.reduce((a, r) => a + (r.attempts ?? 1), 0);

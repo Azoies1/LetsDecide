@@ -44,7 +44,7 @@ class Fake:
 
 
 async def answer_all(model, request, n=0):
-    return {"model": model, "answers": {q: yes(0.9) for q in request["questions"]}, "input_tokens": 10}
+    return {"model": model, "answers": {q: yes(0.9) for q in request["questions"]}, "input_tokens": 10, "estimated_cost_usd": 0.5}
 
 
 async def no_sleep(_s):
@@ -164,7 +164,7 @@ async def test_split_chunks_and_merges():
     f = Fake(answer_all)
     res = await compose(f, split())("clef/clef-flash", {"input": "x", "questions": qs(130)})
     assert [len(r["questions"]) for _, r in f.calls] == [64, 64, 2]
-    assert len(res["answers"]) == 130 and res["input_tokens"] == 30 and res["parts"] == 3
+    assert len(res["answers"]) == 130 and res["input_tokens"] == 30 and res["parts"] == 3 and res["estimated_cost_usd"] == 1.5
 
     f = Fake(answer_all)
     res = await compose(f, split())("jev/x", {"questions": qs(500)})

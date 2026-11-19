@@ -574,3 +574,21 @@ fn confidence_is_read_off_probabilities_when_not_sent() {
     assert_eq!(out["answers"]["s"]["confidence"], 0.6f32 as f64);
     assert_eq!(out["answers"]["s"]["confidence_source"], "probabilities");
 }
+
+#[test]
+fn cost_estimates_come_from_spec_prices() {
+    let c = estimate_cost_usd("openai/gpt-6-luna", 1_000_000).unwrap();
+    assert!((c - 0.10).abs() < 1e-12);
+    assert!((estimate_cost_usd("clef/clef-flash", 500_000).unwrap() - 0.019).abs() < 1e-12);
+    assert_eq!(estimate_cost_usd("jev/jev-latest", 10), None);
+
+    let req = r#"{"input":"x","questions":{"q":{"kind":"yesno","instructions":"?"}}}"#;
+    let res = r#"{"status":200,"headers":[],"body":"{\"answers\":[{\"type\":\"predicate\",\"probability\":0.5}],\"usage\":{\"input_tokens\":2000}}"}"#;
+    let out: serde_json::Value =
+        serde_json::from_str(&json::parse("openai/gpt-6-luna", req, res)).unwrap();
+    assert!((out["ok"]["estimated_cost_usd"].as_f64().unwrap() - 0.0002).abs() < 1e-12);
+    let res = r#"{"status":200,"headers":[],"body":"{\"answers\":{\"q\":{\"noul\":0.5}},\"usage\":{\"input_tokens\":5}}"}"#;
+    let out: serde_json::Value =
+        serde_json::from_str(&json::parse("jev/jev-latest", req, res)).unwrap();
+    assert!(out["ok"].get("estimated_cost_usd").is_none());
+}
