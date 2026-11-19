@@ -177,6 +177,7 @@ Built in small steps; each lands only when needed. Details in
 - [x] **M3** Bindings: TypeScript/WASM, Python. Swift and Kotlin when asked for
 - [x] **M4** Retry and fallback (JS). Next: hedging, split/merge, shadow, calibration, observe
 - [ ] **M5** Evaluation (shadow mode, calibration)
+- [ ] **M6** Custom providers and local models (proposal: [docs/plan-custom-and-local-providers.md](docs/plan-custom-and-local-providers.md))
 
 ## Contributing
 
