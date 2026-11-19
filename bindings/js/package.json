@@ -7,7 +7,7 @@
   "type": "module",
   "main": "index.js",
   "types": "index.d.ts",
-  "files": ["index.js", "index.d.ts", "pkg"],
+  "files": ["index.js", "index.d.ts", "middleware.js", "middleware.d.ts", "pkg"],
   "scripts": {
     "build": "cargo build -p letsdecide-wasm --target wasm32-unknown-unknown --release && wasm-bindgen --target web --out-dir pkg ../../target/wasm32-unknown-unknown/release/letsdecide_wasm.wasm",
     "test": "node --test test/*.test.js"

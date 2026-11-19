@@ -68,3 +68,4 @@ export class Client {
   /** `model` is `"provider/model"`, e.g. `"clef/clef-flash"`. */
   decide(model: string, request: DecisionRequest, options?: { signal?: AbortSignal }): Promise<DecisionResponse>;
 }
+export * from "./middleware";
