@@ -159,8 +159,25 @@ descriptions, bodies or config values; tests check this.
 
 ## Custom providers
 
-Not supported yet? Plug it in. In Rust today (JS and Python next; see the
-[plan](docs/plan-custom-and-local-providers.md)):
+Not supported yet? Plug it in, in JS, Python or Rust. Your provider gets the
+same request validation, response checks, error codes and middleware as the
+built-ins. Full guide, engines, the mock engine and the conformance kit:
+[docs/custom-providers.md](docs/custom-providers.md).
+
+```js
+import { Client, classifyHttp, mockEngine } from "letsdecide";
+
+const acme = {
+  capabilities: { max_questions: 50 },
+  build: (model, req, cfg) => ({ url: "https://api.acme.ai/v1/decide", headers: { authorization: `Bearer ${cfg.apiKey}` }, body: JSON.stringify(toAcme(model, req)) }),
+  parse: async (req, res) => { if (res.status >= 300) throw await classifyHttp(res); return fromAcme(JSON.parse(res.body), req); },
+};
+const client = new Client({ apiKey }, { providers: { acme }, engines: { mock: mockEngine() } });
+await client.decide("acme/acme-decide-2", request); // or "mock/any" in tests
+```
+
+Python: `Client(api_key=..., providers={"acme": Acme()}, engines={"mock": mock_engine()})`.
+Rust:
 
 ```rust,no_run
 use letsdecide::*;
@@ -282,7 +299,7 @@ Built in small steps; each lands only when needed. Details in
 - [x] Extras: OpenAI image URLs, `confidence_source`, cost estimates, `provider_extras`
 - [ ] Optional: live contract tests (not built: each run spends real tokens)
 - [ ] First release (crates.io, npm, PyPI, Maven, SwiftPM)
-- [ ] **M6** Custom providers and local models ([plan](docs/plan-custom-and-local-providers.md)). P1 done: registry, capabilities, response checks, error details, `headers`/`options`. Next: custom providers in JS and Python
+- [ ] **M6** Custom providers and local models ([plan](docs/plan-custom-and-local-providers.md)). Done: registry, capabilities, response checks, error details, `headers`/`options` (P1); custom codecs and engines in JS and Python, mock engine, conformance kit (P2). Next: dialects (P3), local label scorer and sidecar (P4)
 
 ## Contributing
 

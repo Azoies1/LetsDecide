@@ -13,6 +13,11 @@ pub fn parse(model: &str, request: &str, response: &str) -> String {
 }
 
 #[wasm_bindgen]
+pub fn builtins() -> String {
+    letsdecide::json::builtins()
+}
+
+#[wasm_bindgen]
 pub fn capabilities(model: &str) -> String {
     letsdecide::json::capabilities(model)
 }

@@ -13,6 +13,11 @@ fn parse(model: &str, request: &str, response: &str) -> String {
 }
 
 #[pyfunction]
+fn builtins() -> String {
+    letsdecide::json::builtins()
+}
+
+#[pyfunction]
 fn capabilities(model: &str) -> String {
     letsdecide::json::capabilities(model)
 }
@@ -41,6 +46,7 @@ fn merge(request: &str, members: &str, rules: &str) -> String {
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(build, m)?)?;
     m.add_function(wrap_pyfunction!(parse, m)?)?;
+    m.add_function(wrap_pyfunction!(builtins, m)?)?;
     m.add_function(wrap_pyfunction!(capabilities, m)?)?;
     m.add_function(wrap_pyfunction!(validate, m)?)?;
     m.add_function(wrap_pyfunction!(merge, m)?)?;
