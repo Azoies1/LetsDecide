@@ -7,7 +7,10 @@ responses are `[String: Any]` in the canonical shape.
 ```swift
 import LetsDecide
 
-let client = Client(apiKey: "...") // also: accessToken: { try await fresh() }, baseUrl:, accountId:, transport:
+// Settings per provider: a key only ever goes to its own provider.
+let client = Client(byProvider: ["jev": ProviderSettings(apiKey: "...")])
+// ProviderSettings also takes accessToken: { try await fresh() }, baseUrl:, accountId:, headers:.
+// Client also takes shared headers: and transport:.
 do {
     let out = try await client.decide("jev/jev-latest", [
         "input": "Great product, arrived late.",

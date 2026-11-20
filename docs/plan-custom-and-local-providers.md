@@ -238,7 +238,7 @@ A small server that speaks **System One** (`POST /v1/systemone`) and answers
 with the scorer over a local runtime. Then:
 
 ```js
-client.decide("systemone/qwen3-1.7b", req) // baseUrl: "http://localhost:8787"
+client.decide("systemone/qwen3-1.7b", req) // byProvider.systemone.baseUrl: "http://localhost:8787"
 ```
 
 works from **every** binding with zero new client code, including from

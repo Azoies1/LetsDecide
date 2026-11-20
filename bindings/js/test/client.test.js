@@ -26,7 +26,7 @@ test("decide builds the request, sends it and parses the reply", async () => {
       usage: { total_input_tokens: 7 },
     })();
   };
-  const client = new Client({ apiKey: "k" }, { fetch, wasm });
+  const client = new Client({ byProvider: { jev: { apiKey: "k" }, openai: { apiKey: "k" }, gemini: { apiKey: "k" }, clef: { apiKey: "k", accountId: "a" } } }, { fetch, wasm });
   const out = await client.decide("gemini/gemini-decision-1", request);
 
   assert.equal(sent.url, "https://generativelanguage.googleapis.com/v1beta/decisions");
@@ -43,7 +43,7 @@ test("switching provider is one string", async () => {
     urls.push(url);
     return reply(401, {})();
   };
-  const client = new Client({ apiKey: "k", accountId: "a" }, { fetch, wasm });
+  const client = new Client({ byProvider: { jev: { apiKey: "k" }, openai: { apiKey: "k" }, gemini: { apiKey: "k" }, clef: { apiKey: "k", accountId: "a" } } }, { fetch, wasm });
   for (const m of ["jev/jev-latest", "openai/gpt-6-luna", "clef/clef-flash"]) {
     await assert.rejects(client.decide(m, request), { code: "Auth" });
   }
@@ -56,7 +56,7 @@ test("switching provider is one string", async () => {
 
 test("errors are typed and carry retry info", async () => {
   const fetch = reply(429, {}, { "retry-after": "2" });
-  const client = new Client({ apiKey: "k" }, { fetch, wasm });
+  const client = new Client({ byProvider: { jev: { apiKey: "k" }, openai: { apiKey: "k" }, gemini: { apiKey: "k" }, clef: { apiKey: "k", accountId: "a" } } }, { fetch, wasm });
   await assert.rejects(client.decide("jev/jev-latest", request), (e) => {
     assert.ok(e instanceof LetsDecideError);
     assert.equal(e.code, "RateLimited");
@@ -80,14 +80,14 @@ test("clef uses an OAuth token, refreshed per request via a function", async () 
     return reply(401, {})();
   };
   let n = 0;
-  const client = new Client({ accountId: "a", accessToken: async () => `tok${++n}` }, { fetch, wasm });
+  const client = new Client({ byProvider: { clef: { accountId: "a", accessToken: async () => `tok${++n}` } } }, { fetch, wasm });
   for (let i = 0; i < 2; i++) await assert.rejects(client.decide("clef/clef-flash", request), { code: "Auth" });
   assert.deepEqual(seen, ["Bearer tok1", "Bearer tok2"]);
 });
 
 test("gemini and clef fail fast without credentials", async () => {
   const fetch = async () => assert.fail("must not send");
-  const client = new Client({ accountId: "a" }, { fetch, wasm });
+  const client = new Client({ byProvider: { clef: { accountId: "a" } } }, { fetch, wasm });
   for (const m of ["gemini/gemini-decision-1", "clef/clef-flash"]) {
     await assert.rejects(client.decide(m, request), { code: "InvalidRequest" });
   }
@@ -100,7 +100,7 @@ test("config headers are sent and replace same-named ones", async () => {
     return reply(401, {})();
   };
   const client = new Client(
-    { apiKey: "k", headers: { "x-gateway": "g", Authorization: "Token t" } },
+    { byProvider: { jev: { apiKey: "k" } }, headers: { "x-gateway": "g", Authorization: "Token t" } },
     { fetch, wasm },
   );
   await assert.rejects(client.decide("jev/jev-latest", request), { code: "Auth" });

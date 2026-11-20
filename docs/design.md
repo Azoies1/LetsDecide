@@ -171,6 +171,10 @@ Numbered records live in [adr/](adr/README.md); the list below is the original s
   (`no_logprobs`), not sampled guesses.
 - **No default local model.** Consumers choose. Library-assisted choice is
   future work.
+- **Credentials per provider only** (ADR 0014). Clients have no top-level
+  key: each provider's key, token, endpoint and options live in its own
+  `byProvider` entry, so routing middleware can't send a key to the wrong
+  provider. Client-wide headers are for non-secrets.
 - **Packaging:** anything that pulls in a model runtime is a separate package
   (Python extras, `@letsdecide/*`, separate SwiftPM/Gradle artifacts); HTTP
   runtime shims and our own code stay in the main packages.
