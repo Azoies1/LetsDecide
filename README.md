@@ -252,6 +252,29 @@ another model and measure agreement), `calibrate` + `fitIsotonic` (calibrated
 values next to raw ones) and `observe` (timing hooks). Python has the same set
 for `AsyncClient`. See [bindings/js/MIDDLEWARE.md](bindings/js/MIDDLEWARE.md).
 
+### Panels: several models at once
+
+```js
+import { Client, panelEngine } from "letsdecide";
+
+const client = new Client(
+  { byProvider: { jev: { apiKey: JEV_KEY }, gemini: { apiKey: GEMINI_KEY } } },
+  { engines: { panel: panelEngine({
+    moderation: {
+      members: [{ model: "jev/jev-latest" }, { model: "gemini/gemini-decision-1", weight: 2 }],
+      rules: { quorum: 2, timeout_ms: 3000 },
+    },
+  }) } },
+);
+const res = await client.decide("panel/moderation", request);
+res.agreement; res.disagreed; res.panel; // how the members voted
+```
+
+`vote` (weighted majority; `merge: "mean"` only within one probability source)
+or `race` (first answer wins). Members switch on and off with `enabled`, and
+the config can be a function read on every call. Python: `panel_engine`. See
+[docs/concurrent-models.md](docs/concurrent-models.md).
+
 ## Python
 
 ```python

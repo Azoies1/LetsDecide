@@ -7,11 +7,14 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
-- Panels, core part: `merge` (Rust) and `json::merge` (WASM, Python, UniFFI)
-  combine several models' answers by weighted vote or same-source mean, with
-  `quorum`, `agreement` and `disagreed`. New reasons `below_quorum` and
-  `mixed_probability_source`; new `probability_source` value `vote`. The
-  panel engine itself follows. See `docs/concurrent-models.md`.
+- Panels: ask several models at once and combine their answers.
+  `panelEngine` (JS) and `panel_engine` (Python) register like any engine
+  (`"panel/<name>"`), with `vote` and `race` modes, per-member `enabled` and
+  `weight`, live config, `quorum`, `timeout_ms`, and `merge: "vote" | "mean"`.
+  The pure `merge` lives in the core (`json::merge` in every binding). New
+  reasons `below_quorum` and `mixed_probability_source`; new
+  `probability_source` value `vote`. See `docs/concurrent-models.md`.
+- Custom engines' extra response fields are now kept after the response check.
 - Kotlin and Swift bindings over UniFFI (`bindings/uniffi`, `bindings/kotlin`, `bindings/swift`).
 - Middleware (JS and async Python): `hedge`, `split`, `shadow` + `compare`,
   `calibrate` + `fitIsotonic` + `brierScore`, `observe`. Python also gets

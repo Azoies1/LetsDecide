@@ -194,6 +194,7 @@ fn below_quorum_keeps_the_members_error() {
     assert!(e.retryable());
     assert_eq!(e.retry_after_ms, Some(2000));
     let d = e.details.unwrap();
+    assert_eq!(d.provider.as_deref(), Some("gemini"));
     assert_eq!(
         (d.reason, d.limit, d.actual),
         (Reason::BelowQuorum, Some(2), Some(1))

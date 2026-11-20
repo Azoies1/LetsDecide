@@ -197,14 +197,14 @@ pub fn merge(req: &DecisionRequest, members: &[Member], rules: &Rules) -> Result
     }
 
     let mut answered: Vec<(&Member, &DecisionResponse)> = vec![];
-    let mut last_err: Option<Error> = None;
+    let mut last_err: Option<(Error, &str)> = None;
     for m in members {
         match &m.outcome {
             Outcome::Answered(r) => match r.check(req) {
                 Ok(()) => answered.push((m, r)),
-                Err(e) => last_err = Some(e.with_provider(prefix(&m.model))),
+                Err(e) => last_err = Some((e, prefix(&m.model))),
             },
-            Outcome::Failed(e) => last_err = Some(e.clone().with_provider(prefix(&m.model))),
+            Outcome::Failed(e) => last_err = Some((e.clone(), prefix(&m.model))),
             Outcome::Skipped => {}
         }
     }
@@ -212,9 +212,10 @@ pub fn merge(req: &DecisionRequest, members: &[Member], rules: &Rules) -> Result
     if answered.len() < rules.quorum {
         // Keep the last failure's code, status and retry hint, so `retry`
         // and `fallback` treat the panel like the member that failed.
-        let base = last_err.unwrap_or_else(|| Error::new(ErrorCode::Unsupported, ""));
+        let (base, failed) =
+            last_err.unwrap_or_else(|| (Error::new(ErrorCode::Unsupported, ""), ""));
         let mut d = Details::new(Reason::BelowQuorum).limit(rules.quorum, answered.len());
-        d.provider = base.details.as_ref().and_then(|d| d.provider.clone());
+        d.provider = (!failed.is_empty()).then(|| failed.to_owned());
         return Err(Error {
             message: format!(
                 "{} of {} required members answered",

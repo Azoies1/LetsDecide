@@ -210,3 +210,33 @@ export function check(request: DecisionRequest, response: unknown, options?: { w
 export function classifyHttp(response: { status: number; headers?: Record<string, string> | [string, string][]; body?: string }, options?: { wasm?: BufferSource | WebAssembly.Module }): Promise<LetsDecideError>;
 export function capabilities(model: string, options?: { wasm?: BufferSource | WebAssembly.Module }): Promise<Capabilities>;
 export function mockEngine(options?: { answers?: Record<string, Answer>; model?: string; probabilitySource?: "provider" | "logprob" | "nli" }): Engine;
+
+/** One panel: members asked together, combined by `rules`. See docs/concurrent-models.md. */
+export interface Panel {
+  /** `vote` (default): merge every answer. `race`: first answer wins, the rest are aborted. */
+  mode?: "vote" | "race";
+  members: { model: string; enabled?: boolean; weight?: number }[];
+  rules?: {
+    /** Minimum members that must answer (default 1). */
+    quorum?: number;
+    /** Deadline for the whole panel; late members count as `ProviderUnavailable`. */
+    timeout_ms?: number;
+    /** `vote` (default): weighted majority. `mean`: average, same `probability_source` only. */
+    merge?: "vote" | "mean";
+  };
+}
+
+/** Per member: its response, its error (code and safe details), or `skipped` (can't take the request). */
+export type PanelReport = Record<string, ({ response: DecisionResponse } | { error: { code: ErrorCode; details?: ErrorDetails } } | { skipped: true }) & { ms: number }>;
+
+/** A panel's answer: merged (vote) or the winner's (race), plus how each member did. */
+export type PanelResponse = DecisionResponse & {
+  /** vote: per question, weighted share of voters that agreed with the merged answer. */
+  agreement?: Record<string, number>;
+  /** vote: questions where the voters were not unanimous. */
+  disagreed?: string[];
+  panel: PanelReport;
+};
+
+/** An engine that asks several models at once. `panels` may be a function, read on every call. */
+export function panelEngine(panels: Record<string, Panel> | (() => Record<string, Panel> | Promise<Record<string, Panel>>)): Engine;
