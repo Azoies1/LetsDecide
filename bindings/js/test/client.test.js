@@ -72,3 +72,52 @@ test("invalid requests fail before any network call", async () => {
   const bad = { input: "x", questions: { "Bad-Id": { kind: "yesno", instructions: "?" } } };
   await assert.rejects(client.decide("jev/jev-latest", bad), { code: "InvalidRequest" });
 });
+
+test("clef uses an OAuth token, refreshed per request via a function", async () => {
+  const seen = [];
+  const fetch = async (_url, init) => {
+    seen.push(init.headers.authorization);
+    return reply(401, {})();
+  };
+  let n = 0;
+  const client = new Client({ accountId: "a", accessToken: async () => `tok${++n}` }, { fetch, wasm });
+  for (let i = 0; i < 2; i++) await assert.rejects(client.decide("clef/clef-flash", request), { code: "Auth" });
+  assert.deepEqual(seen, ["Bearer tok1", "Bearer tok2"]);
+});
+
+test("gemini and clef fail fast without credentials", async () => {
+  const fetch = async () => assert.fail("must not send");
+  const client = new Client({ accountId: "a" }, { fetch, wasm });
+  for (const m of ["gemini/gemini-decision-1", "clef/clef-flash"]) {
+    await assert.rejects(client.decide(m, request), { code: "InvalidRequest" });
+  }
+});
+
+test("config headers are sent and replace same-named ones", async () => {
+  let sent;
+  const fetch = async (url, init) => {
+    sent = init.headers;
+    return reply(401, {})();
+  };
+  const client = new Client(
+    { apiKey: "k", headers: { "x-gateway": "g", Authorization: "Token t" } },
+    { fetch, wasm },
+  );
+  await assert.rejects(client.decide("jev/jev-latest", request), { code: "Auth" });
+  assert.equal(sent["x-gateway"], "g");
+  assert.equal(sent.Authorization, "Token t");
+  assert.equal(sent.authorization, undefined);
+});
+
+test("errors carry safe details", async () => {
+  const fetch = async () => assert.fail("must not send");
+  const client = new Client({}, { fetch, wasm });
+  const tooMany = { input: "x", questions: Object.fromEntries(
+    Array.from({ length: 65 }, (_, i) => [`q${i}`, { kind: "yesno", instructions: "secret" }])) };
+  await assert.rejects(client.decide("clef/clef-flash", tooMany), (e) => {
+    assert.equal(e.code, "Unsupported");
+    assert.deepEqual(e.details, { reason: "too_many_questions", provider: "clef", limit: 64, actual: 65 });
+    assert.ok(!e.message.includes("secret"));
+    return true;
+  });
+});

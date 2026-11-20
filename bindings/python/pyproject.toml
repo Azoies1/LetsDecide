@@ -16,8 +16,12 @@ test = ["pytest", "pytest-asyncio", "httpx>=0.25"]
 
 [tool.maturin]
 module-name = "letsdecide._core"
+# Python extensions must not link libpython (wheel compliance check). Set
+# here, not in Cargo.toml, so plain `cargo test` still links.
+features = ["pyo3/extension-module"]
 python-source = "."
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

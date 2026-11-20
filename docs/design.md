@@ -16,14 +16,20 @@ A thin translation layer can hide the differences.
 - Switch provider by changing a string (`clef/clef-flash`).
 - Negligible overhead: the network (40–250 ms) dominates translation (µs).
 - Each provider is one module behind one trait; adding one never touches the core.
+- Users can add providers we don't ship (another cloud, an in-house service)
+  without forking: register them under a name; they get the same validation,
+  response checks, errors and middleware as the built-ins.
+- Run on the user's own hardware too: server, PC, phone, browser *(planned,
+  see [plan-custom-and-local-providers.md](plan-custom-and-local-providers.md))*.
 - Honest about differences: unsupported features error out.
 
 ## Non-goals (v1)
 
 - Hosting, billing or a proxy service.
-- Running models locally (self-hosted models are just HTTP providers).
-- Emulating decisions with a chat LLM.
+- Getting decisions by **parsing a model's generated text**. Local models are
+  read through their label probabilities instead (see "Decisions made").
 - Making confidence numbers comparable across providers.
+- Picking a model for the user (local or cloud). See future-work.md.
 
 ## Architecture: sans-IO
 
@@ -43,19 +49,39 @@ See `src/model.rs`.
 - Questions are keyed by id; answers come back by the same id.
 - Option and level ids are app-chosen and returned unchanged.
 - Probabilities pass through untouched.
-- Ids match `[a-z0-9_]{1,64}`.
+- Ids match `[a-z0-9_]{1,64}`; Gemini allows `[A-Za-z0-9_-]{1,128}`.
 
 ## Provider interface
 
 ```rust
 trait Provider {
+    fn capabilities(&self, model: &str) -> Capabilities;
     fn build(&self, model: &str, req: &DecisionRequest, cfg: &Config) -> Result<HttpRequest, Error>;
     fn parse(&self, req: &DecisionRequest, res: &HttpResponse) -> Result<DecisionResponse, Error>;
 }
 ```
 
-Two pure functions are the whole extension surface. `resolve("provider/model")`
-picks the adapter.
+Three pure functions are the whole extension surface. A `Registry` maps
+prefixes to providers (built-ins plus the user's); `resolve("provider/model")`
+is the shortcut for built-ins only. Going through a registry (as every
+binding does):
+
+```
+Capabilities::check(req)  →  build  →  host sends  →  parse  →  DecisionResponse::check(req)
+```
+
+so every provider, built-in or custom, gets the same guarantees: requests it
+can't take fail before any I/O (`Unsupported`, with details), and malformed
+answers fail as `BadResponse` instead of reaching the app.
+
+### Extension ladder
+
+| Rung | User writes | Status |
+|---|---|---|
+| 0. Config | `base_url`, `headers`, `options` | built |
+| 1. Dialect | data describing a System One / OpenAI variant | planned |
+| 2. Codec | `build` + `parse` (+ `capabilities`) in their language | Rust: built (`Registry`). JS/Python: planned |
+| 3. Engine | one async `decide()`; for non-HTTP and local models | planned |
 
 ## Provider mapping
 
@@ -79,6 +105,8 @@ any compatible server.
 
 ## Decisions made
 
+Numbered records live in [adr/](adr/README.md); the list below is the original summary.
+
 - **Rust core.** One codebase for every provider mapping; bindings are generated
   later (UniFFI, napi-rs, PyO3, wasm-bindgen). Fallback if too heavy: TypeScript
   + Swift sharing the same JSON fixtures.
@@ -89,49 +117,94 @@ any compatible server.
   whole input. Add a reason when a provider supplies one.
 - **Bindings pass JSON strings.** No per-type codegen: errors come back as
   data (`{error}`) and the wrapper rethrows. Hand-written `.d.ts` for now.
-- **One `media` list, kind from MIME, inline base64 only.** Non-image kinds
-  are Gemini-only; other providers return `Unsupported`. URLs differ per
-  provider (Clef refuses them, OpenAI and Jev need data or assets), so one
-  portable form wins.
+- **One `media` list, kind from MIME.** Inline `data` is portable. `uri`,
+  `options` and non-image kinds are Gemini-only, except public image URLs on
+  OpenAI; other providers return `Unsupported`. Gemini-specific rules live in
+  `src/gemini.rs`.
+- **`confidence_source`, not rescaling.** When a provider omits confidence we
+  read it off the probabilities and say so; numbers are never changed.
+- **`provider_extras` cannot overwrite.** It adds body fields the model lacks;
+  replacing what an adapter sets would make the adapter lie.
+- **Prices are data.** `spec/prices.json` holds sourced prices with a date;
+  the core turns tokens into an estimate. A missing price means no estimate.
 - **JSON layer lives in the core** (`src/json.rs`); every binding is a thin
   wrapper that only adds a transport.
-- **Middleware is `(next) => decide`, in the host language.** Retry and
-  fallback ship; `Client` stays zero-cost without them.
-- **No capability struct yet.** Limits live in the adapter. Add one when a
-  second adapter needs shared validation.
+- **Middleware is `(next) => decide`, in the host language.** Retry,
+  fallback, hedge, split, shadow, calibrate and observe ship for JS and
+  (async) Python; `Client` stays zero-cost without them. Calibration adds
+  `calibrated` next to raw values, never in place of them.
+- **Swift and Kotlin through UniFFI.** One crate (`bindings/uniffi`) exports
+  the same JSON pair; each language adds only a client and a transport.
+- **No live tests in CI.** Real calls need keys and spend tokens on every
+  run; golden fixtures cover the wire formats. Live contract tests are an
+  optional add-on (see future-work).
+- **`Capabilities` is data, checked by the core.** Limits, accepted media
+  (`type/*` patterns), question kinds, `probabilities` source and
+  `locality` (cloud, network, device). Replaced per-adapter limit code once
+  custom providers and routing needed the same checks.
+- **Registry is a value, not a global.** Each client owns one. Custom names are
+  free (`[a-z0-9_-]{1,64}`) and **registering a taken name is an error**
+  (`name_taken`) unless the caller uses `replace`. We rejected a reserved
+  namespace (`x-acme/`): its only benefit is that a future built-in can never
+  clash, and that clash already fails loudly at start-up. Readable model
+  strings matter more. The changelog lists every new built-in prefix.
+- **Every response is checked** (`DecisionResponse::check`): every question
+  answered once, kinds match, ids are the caller's, probabilities finite and
+  in `[0, 1]` (1e-3 slack). Score `value` is only checked to be finite.
+- **Errors carry `details`**: a stable `reason` (snake_case) plus provider,
+  question/option ids, limit and actual counts, MIME type, config field
+  *name*. Only fields that are safe to log exist, so leaking content is not
+  possible by construction. Tests plant a canary in keys, headers, input,
+  media, instructions, descriptions, bodies and config values and check no
+  error contains it.
+- **serde messages are not echoed** when they could quote a value (`invalid
+  type: string "…"`); only position and category are kept. Messages naming
+  our own fields (`missing field`) are kept.
+- **`ProviderError`** is reserved for errors thrown by user code (custom
+  codecs and engines), so they can't be confused with ours.
+- **`probability_source`** on every response (`provider`, `logprob`, `nli`):
+  numbers from different sources are never on one scale.
+- **Local models: label scoring, not text parsing** *(planned)*. A generated
+  "0.8" is text, not a measured probability; free text drifts from the
+  format; sampling isn't repeatable; generation costs more than one forward
+  pass. Runtimes that expose no log-probs return `Unsupported`
+  (`no_logprobs`), not sampled guesses.
+- **No default local model.** Consumers choose. Library-assisted choice is
+  future work.
+- **Packaging:** anything that pulls in a model runtime is a separate package
+  (Python extras, `@letsdecide/*`, separate SwiftPM/Gradle artifacts); HTTP
+  runtime shims and our own code stay in the main packages.
 - **Licence: Apache-2.0** (patent grant).
 
 ## Planned
 
-The detailed backlog, including unimplemented Gemini features, is in
-[future-work.md](future-work.md).
+The backlog, including unverified Gemini behaviour and release steps, is in
+[future-work.md](future-work.md). Built only when a real need appears.
 
-Built only when a real need appears.
-
-- **Input kinds:** audio, video and documents (PDF, Office, CSV; Gemini only so far, inline up to 100 MB, 50 MB for PDF; no YouTube or `gs://`), and image URLs.
-- **Bindings:** Python, Swift, Kotlin. TypeScript/WASM exists (`bindings/`).
-  Each binding is thin: JSON in, JSON out, and the host sends the request.
-  A shared `spec/decision.schema.json` waits until a second binding needs it.
-- **Middleware** (opt-in, in the host language): retry, fallback with
-  capability routing, hedging, split/merge for over-limit requests, calibration
-  (never silent: expose raw and calibrated), shadow, observe hooks.
-- **Extras:** `confidence_source`, cost estimates from `spec/prices.json`,
-  `provider_extras` escape hatch, live nightly contract tests.
+Custom and local providers: phases P2–P6 in
+[plan-custom-and-local-providers.md](plan-custom-and-local-providers.md).
 
 ## Open questions
 
-- Gemini, still unverified: the two official pages disagree on safety blocks
-  (200 + `prompt_feedback.block_reason` vs HTTP 400 + `error.code`; both are
-  handled); a top-level `model` in replies; the 429 body (spend limits give
-  `RESOURCE_EXHAUSTED`). `aistudio.google.com/docs/decisions` returned 404, so
-  `docs/decisions-api` was used. The two pages also list different document
-  MIME types, which matters once PDF input lands.
+- Gemini, still unverified (live calls on 2026-11-19 confirmed the answer
+  shapes, CSV and URI input, and no top-level `model`): the two official pages
+  disagree on safety blocks (200 + `prompt_feedback.block_reason` vs HTTP 400
+  + `error.code`; both are handled); the 429 body (spend limits give
+  `RESOURCE_EXHAUSTED`). Office documents are untested live.
 - Final package name: "Arbiter" is taken on GitHub; `letsdecide` for now.
 - Should a hosted proxy built on this be a later product?
 
 ## Security
 
-- Keys live in memory only; `Config`'s `Debug` redacts them.
+- Keys live in memory only; `Config`'s `Debug` redacts the key, header
+  values, option values and the `base_url` query string.
 - No telemetry; the core makes no network calls.
-- Errors never include keys or request bodies.
+- Errors never include keys, header values, input, media, instructions,
+  descriptions, bodies or config values (enforced by canary tests). Errors
+  thrown by user code are the user's responsibility; bindings will wrap them
+  as `ProviderError` (planned, P2).
+- `headers` reject names that aren't HTTP tokens and values with line breaks
+  (no header injection).
+- Multi-tenant apps that load dialects (planned) from tenant settings must
+  allowlist hosts: a tenant-chosen URL is an SSRF vector.
 - Browser code: a key in client code is public. Call through your backend.

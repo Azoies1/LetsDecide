@@ -1,0 +1,84 @@
+{
+  "model": "openai/gpt-6-luna",
+  "config": {
+    "api_key": "o"
+  },
+  "request": {
+    "input": "A photo.",
+    "media": [
+      {
+        "mime_type": "image/jpeg",
+        "uri": "https://example.com/reference.jpg"
+      }
+    ],
+    "questions": {
+      "q": {
+        "kind": "yesno",
+        "instructions": "Is it red?"
+      }
+    }
+  },
+  "http": {
+    "url": "https://api.openai.com/v1/decisions",
+    "headers": [
+      [
+        "content-type",
+        "application/json"
+      ],
+      [
+        "authorization",
+        "Bearer o"
+      ]
+    ],
+    "body": {
+      "model": "gpt-6-luna",
+      "input": [
+        {
+          "role": "user",
+          "content": [
+            {
+              "type": "input_text",
+              "text": "A photo."
+            },
+            {
+              "type": "input_image",
+              "image_url": "https://example.com/reference.jpg"
+            }
+          ]
+        }
+      ],
+      "questions": [
+        {
+          "type": "predicate",
+          "name": "q",
+          "instructions": "Is it red?"
+        }
+      ]
+    }
+  },
+  "response": {
+    "status": 200,
+    "headers": [],
+    "body": {
+      "answers": [
+        {
+          "type": "predicate",
+          "name": "q",
+          "probability": 0.5
+        }
+      ]
+    }
+  },
+  "expected": {
+    "ok": {
+      "model": null,
+      "input_tokens": null,
+      "answers": {
+        "q": {
+          "kind": "yesno",
+          "probability": 0.5
+        }
+      }
+    }
+  }
+}
