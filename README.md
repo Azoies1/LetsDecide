@@ -62,6 +62,10 @@ println!("{:?}", decision.answers["positive"]);
 | `gemini/gemini-decision-1` | Google Gemini Decisions | `api_key` (required) |
 | `openai/gpt-6-luna` | OpenAI Decisions | `api_key` |
 | `systemone/<model>` | Any System One compatible server | `base_url`, optional `api_key` |
+| `<yours>/<model>` | Your own provider, see [Custom providers](#custom-providers) | yours |
+
+Every client also takes `headers` (sent last; replace same-named adapter
+headers, e.g. for a gateway) and `options` (free-form, for custom providers).
 
 `input` is a string or any JSON value. Providers that only take text get JSON
 serialised to a string.
@@ -110,6 +114,10 @@ vision model such as `jev-preview`.
 | `score` | `Score { value, confidence, confidence_source, probabilities }` | `probabilities` keyed by your level ids |
 | any | `Refused` | Provider declined (OpenAI refusal, Gemini safety block, as `prompt_feedback.block_reason` or HTTP 400 `error.code`). Other answers still succeed |
 
+Every response has `probability_source` (`provider` for every built-in; later
+`logprob` or `nli` for local models) and is checked before you get it: every
+question answered, kinds and ids match, probabilities in `[0, 1]`.
+
 Numbers are the provider's, never rescaled. `confidence_source` says where
 `confidence` came from: `provider`, or `probabilities` when the provider sent
 none and it was read off the chosen option (or most likely level). Each
@@ -133,7 +141,11 @@ discounts are not applied, and a `base_url` proxy or gateway may bill differentl
 ### Errors
 
 Every failure is an `Error` with a stable `code` and a `retryable()` flag.
-Keys and request bodies are never included.
+Most also carry `details`: a stable `reason` (`too_many_questions`,
+`media_not_accepted`, `unknown_provider`, `missing_answer`, …) plus the
+provider, question id, limit and actual count, MIME type or config field name.
+Errors never contain keys, header values, input, media, instructions,
+descriptions, bodies or config values; tests check this.
 
 | Code | When | Retryable |
 |---|---|---|
@@ -142,7 +154,44 @@ Keys and request bodies are never included.
 | `Auth` | 401 / 403 | No |
 | `RateLimited` | 429; `retry_after_ms` set when the provider sends `Retry-After` | Yes |
 | `ProviderUnavailable` | 5xx | Yes |
-| `BadResponse` | 2xx but the body doesn't parse. Likely an API change | No |
+| `BadResponse` | 2xx but the body doesn't parse or fails the response check. Likely an API change, or a bug in a custom provider | No |
+| `ProviderError` | Reserved for errors thrown by custom provider code | No |
+
+## Custom providers
+
+Not supported yet? Plug it in. In Rust today (JS and Python next; see the
+[plan](docs/plan-custom-and-local-providers.md)):
+
+```rust,no_run
+use letsdecide::*;
+
+struct Acme;
+impl Provider for Acme {
+    fn capabilities(&self, _model: &str) -> Capabilities {
+        Capabilities { max_questions: Some(50), ..Default::default() }
+    }
+    fn build(&self, model: &str, req: &DecisionRequest, cfg: &Config) -> Result<HttpRequest, Error> {
+        # let _ = (model, req, cfg); unimplemented!()
+        // Map `req` to Acme's wire format; `apply_headers(&mut http, cfg)` last.
+    }
+    fn parse(&self, req: &DecisionRequest, res: &HttpResponse) -> Result<DecisionResponse, Error> {
+        if res.status >= 300 { return Err(http_error(res)); } // same classification as built-ins
+        # let _ = req; unimplemented!()
+        // Map Acme's reply to answers keyed by your question ids.
+    }
+}
+
+# fn main() -> Result<(), Error> {
+# let (req, res): (DecisionRequest, HttpResponse) = unimplemented!();
+let mut providers = Registry::builtin();
+providers.register("acme", Acme)?;            // error if the name is taken
+let http = providers.build("acme/decide-2", &req, &Config::default())?; // capabilities checked first
+let out = providers.parse("acme/decide-2", &req, &res)?;                // response checked after
+# Ok(()) }
+```
+
+A server that already speaks System One needs no code: use
+`systemone/<model>` with `base_url` (and `headers` if it wants other auth).
 
 ## JavaScript / TypeScript
 
@@ -233,6 +282,7 @@ Built in small steps; each lands only when needed. Details in
 - [x] Extras: OpenAI image URLs, `confidence_source`, cost estimates, `provider_extras`
 - [ ] Optional: live contract tests (not built: each run spends real tokens)
 - [ ] First release (crates.io, npm, PyPI, Maven, SwiftPM)
+- [ ] **M6** Custom providers and local models ([plan](docs/plan-custom-and-local-providers.md)). P1 done: registry, capabilities, response checks, error details, `headers`/`options`. Next: custom providers in JS and Python
 
 ## Contributing
 

@@ -1,13 +1,15 @@
 import init, { build, parse } from "./pkg/letsdecide_wasm.js";
 
 export class LetsDecideError extends Error {
-  constructor({ code, message, status, retry_after_ms, retryable }) {
+  constructor({ code, message, status, retry_after_ms, retryable, details }) {
     super(message);
     this.name = "LetsDecideError";
     this.code = code;
     this.status = status ?? undefined;
     this.retryAfterMs = retry_after_ms ?? undefined;
     this.retryable = retryable;
+    // Safe to log: names, ids, counts, MIME types. Never keys or content.
+    this.details = details ?? undefined;
   }
 }
 
@@ -26,7 +28,7 @@ export function initialize(wasm) {
 
 export class Client {
   /**
-   * @param config `{ apiKey, accessToken, baseUrl, accountId }`. `accessToken` is an
+   * @param config `{ apiKey, accessToken, baseUrl, accountId, headers, options }`. `accessToken` is an
    *   OAuth token (Clef) or a function returning one (sync or async), called on every
    *   request so you can refresh it.
    * @param opts `{ fetch, wasm }`
@@ -41,12 +43,14 @@ export class Client {
   async decide(model, request, { signal } = {}) {
     await initialize(this.wasm);
     const req = JSON.stringify(request);
-    const { accessToken } = this.cfg;
+    const { accessToken, headers = [] } = this.cfg;
     const config = JSON.stringify({
       api_key: this.cfg.apiKey,
       access_token: typeof accessToken === "function" ? await accessToken() : accessToken,
       base_url: this.cfg.baseUrl,
       account_id: this.cfg.accountId,
+      headers: Array.isArray(headers) ? headers : Object.entries(headers),
+      options: this.cfg.options ?? {},
     });
     const http = unwrap(build(model, req, config));
     const res = await this.fetch(http.url, {

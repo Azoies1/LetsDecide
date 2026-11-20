@@ -4,7 +4,7 @@ use crate::*;
 use serde_json::{json, Map, Value};
 
 /// Image MIME types accepted (decisions-api, "Input").
-const IMAGE_MIME: [&str; 8] = [
+pub(crate) const IMAGE_MIME: [&str; 8] = [
     "image/png",
     "image/jpeg",
     "image/webp",

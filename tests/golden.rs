@@ -43,6 +43,8 @@ fn golden() {
             (Ok(got), e) => {
                 let want: DecisionResponse = serde_json::from_value(e["ok"].clone()).unwrap();
                 assert_eq!(got, want, "{name}: parsed response");
+                got.check(&req)
+                    .unwrap_or_else(|e| panic!("{name}: response check: {e}"));
             }
             (Err(got), e) => {
                 assert_eq!(

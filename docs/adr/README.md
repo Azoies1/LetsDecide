@@ -15,3 +15,9 @@ Format: copy [0000-template.md](0000-template.md).
 | [0005](0005-errors-over-degradation.md) | Unsupported features error, never degrade | Accepted |
 | [0006](0006-keys-in-memory-only.md) | Keys live in memory only | Accepted |
 | [0007](0007-oauth-token-in-config-host-refreshes.md) | OAuth token in `Config`; host refreshes | Accepted |
+| [0008](0008-provider-registry-free-names.md) | Provider registry; free names, a clash is an error | Accepted |
+| [0009](0009-capabilities-and-response-check.md) | Capabilities as data; every response checked | Accepted |
+| [0010](0010-safe-error-details.md) | Structured error details that are safe to log | Accepted |
+| [0011](0011-local-models-label-scoring.md) | Local models read label probabilities; no text parsing | Accepted |
+| [0012](0012-no-default-local-model.md) | No default local model | Accepted |
+| [0013](0013-engine-packaging.md) | Model runtimes ship in separate packages | Accepted |

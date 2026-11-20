@@ -3,7 +3,8 @@
 //! Verified against OpenAI's reference. Images go as base64 data URLs or public
 //! http(s) URLs (`Media.uri`); file ids are not supported by the API.
 
-use crate::provider::{encode, http_error, post};
+use crate::error::safe_serde_message;
+use crate::provider::{encode, post};
 use crate::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -11,8 +12,14 @@ use std::collections::BTreeMap;
 
 pub struct OpenAi;
 
-const MAX_QUESTIONS: usize = 400;
-const MAX_LEVELS: usize = 10;
+fn caps() -> Capabilities {
+    Capabilities {
+        max_questions: Some(400),
+        max_levels: Some(10),
+        media: vec!["image/*".into()],
+        ..Default::default()
+    }
+}
 
 #[derive(Serialize)]
 struct Body<'a> {
@@ -85,19 +92,18 @@ struct ScoreProb {
 }
 
 impl Provider for OpenAi {
+    fn capabilities(&self, _model: &str) -> Capabilities {
+        caps()
+    }
+
     fn build(
         &self,
         model: &str,
         req: &DecisionRequest,
         cfg: &Config,
     ) -> Result<HttpRequest, Error> {
-        req.validate()?;
+        caps().check(req)?;
         req.require_portable(true)?;
-        let unsupported = |m: String| Err(Error::new(ErrorCode::Unsupported, m));
-        if req.questions.len() > MAX_QUESTIONS {
-            return unsupported(format!("max {MAX_QUESTIONS} questions per request"));
-        }
-        req.require_images_only()?;
         let input = match (&req.input, req.media.is_empty()) {
             (Value::String(_), true) => req.input.clone(),
             (Value::String(_) | Value::Object(_) | Value::Array(_), _) => {
@@ -140,19 +146,14 @@ impl Provider for OpenAi {
                 Question::Score {
                     instructions,
                     levels,
-                } => {
-                    if levels.len() > MAX_LEVELS {
-                        return unsupported(format!("question `{id}`: max {MAX_LEVELS} levels"));
-                    }
-                    Wire::Score {
-                        name: id,
-                        instructions,
-                        levels: levels
-                            .iter()
-                            .map(|l| json!({ "label": l.id, "description": l.description }))
-                            .collect(),
-                    }
-                }
+                } => Wire::Score {
+                    name: id,
+                    instructions,
+                    levels: levels
+                        .iter()
+                        .map(|l| json!({ "label": l.id, "description": l.description }))
+                        .collect(),
+                },
             });
         }
         let body = encode(
@@ -163,13 +164,15 @@ impl Provider for OpenAi {
             },
             req,
         )?;
-        Ok(post(
+        let mut http = post(
             "https://api.openai.com/v1/decisions".into(),
             "authorization",
             true,
             cfg,
             body,
-        ))
+        );
+        apply_headers(&mut http, cfg)?;
+        Ok(http)
     }
 
     fn parse(&self, req: &DecisionRequest, res: &HttpResponse) -> Result<DecisionResponse, Error> {
@@ -180,7 +183,8 @@ impl Provider for OpenAi {
             status: Some(res.status),
             ..Error::new(ErrorCode::BadResponse, m)
         };
-        let reply: Reply = serde_json::from_slice(&res.body).map_err(|e| bad(e.to_string()))?;
+        let reply: Reply = serde_json::from_slice(&res.body)
+            .map_err(|e| bad(safe_serde_message("response body", &e)))?;
         if reply.answers.len() != req.questions.len() {
             return Err(bad(format!(
                 "expected {} answers, got {}",
@@ -237,6 +241,7 @@ impl Provider for OpenAi {
             model: reply.model,
             answers,
             input_tokens: reply.usage.and_then(|u| u.input_tokens),
+            probability_source: ProbabilitySource::Provider,
             block_reason: None,
         })
     }

@@ -10,12 +10,16 @@ __all__ = ["Client", "AsyncClient", "LetsDecideError"]
 
 
 class LetsDecideError(Exception):
-    def __init__(self, code, message, status=None, retry_after_ms=None, retryable=False):
+    def __init__(
+        self, code, message, status=None, retry_after_ms=None, retryable=False, details=None
+    ):
         super().__init__(message)
         self.code = code
         self.status = status
         self.retry_after_ms = retry_after_ms
         self.retryable = retryable
+        # Safe to log: names, ids, counts, MIME types. Never keys or content.
+        self.details = details
 
 
 def _unwrap(text: str) -> Any:
@@ -38,13 +42,29 @@ def _httpx():
 
 
 class _Base:
-    def __init__(self, *, api_key=None, access_token=None, base_url=None, account_id=None):
+    def __init__(
+        self,
+        *,
+        api_key=None,
+        access_token=None,
+        base_url=None,
+        account_id=None,
+        headers=None,
+        options=None,
+    ):
         """`access_token`: OAuth token (Clef) or a callable returning a fresh one,
-        called on every request. Wins over `api_key`."""
+        called on every request. Wins over `api_key`. `headers`: dict or list of
+        pairs, sent last (replace same-named ones). `options`: free-form
+        settings for custom providers."""
+        headers = headers or []
+        if isinstance(headers, dict):
+            headers = list(headers.items())
         self._api_key = api_key
         self._access_token = access_token
         self._base_url = base_url
         self._account_id = account_id
+        self._headers = [list(h) for h in headers]
+        self._options = options or {}
 
     def _config(self, token):
         return json.dumps(
@@ -53,6 +73,8 @@ class _Base:
                 "access_token": token,
                 "base_url": self._base_url,
                 "account_id": self._account_id,
+                "headers": self._headers,
+                "options": self._options,
             }
         )
 

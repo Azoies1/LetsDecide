@@ -14,7 +14,7 @@ pip install "letsdecide[httpx]"   # or bring your own client: pip install letsde
 ```python
 from letsdecide import Client, LetsDecideError
 
-client = Client(api_key="...")  # also: access_token= (OAuth string or callable, e.g. for Clef), base_url=, account_id=, client=httpx.Client(...)
+client = Client(api_key="...")  # also: access_token= (OAuth string or callable, e.g. for Clef), base_url=, account_id=, headers=, options=, client=httpx.Client(...)
 try:
     out = client.decide("jev/jev-latest", {
         "input": "Great product, arrived late.",
@@ -22,7 +22,7 @@ try:
     })
     print(out["answers"]["positive"])
 except LetsDecideError as e:
-    print(e.code, e.status, e.retryable, e.retry_after_ms)
+    print(e.code, e.status, e.retryable, e.retry_after_ms, e.details)  # details: safe to log
 ```
 
 Async: `AsyncClient(...)` and `await client.decide(...)`. Change the model

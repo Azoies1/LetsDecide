@@ -16,14 +16,20 @@ A thin translation layer can hide the differences.
 - Switch provider by changing a string (`clef/clef-flash`).
 - Negligible overhead: the network (40–250 ms) dominates translation (µs).
 - Each provider is one module behind one trait; adding one never touches the core.
+- Users can add providers we don't ship (another cloud, an in-house service)
+  without forking: register them under a name; they get the same validation,
+  response checks, errors and middleware as the built-ins.
+- Run on the user's own hardware too: server, PC, phone, browser *(planned,
+  see [plan-custom-and-local-providers.md](plan-custom-and-local-providers.md))*.
 - Honest about differences: unsupported features error out.
 
 ## Non-goals (v1)
 
 - Hosting, billing or a proxy service.
-- Running models locally (self-hosted models are just HTTP providers).
-- Emulating decisions with a chat LLM.
+- Getting decisions by **parsing a model's generated text**. Local models are
+  read through their label probabilities instead (see "Decisions made").
 - Making confidence numbers comparable across providers.
+- Picking a model for the user (local or cloud). See future-work.md.
 
 ## Architecture: sans-IO
 
@@ -49,13 +55,33 @@ See `src/model.rs`.
 
 ```rust
 trait Provider {
+    fn capabilities(&self, model: &str) -> Capabilities;
     fn build(&self, model: &str, req: &DecisionRequest, cfg: &Config) -> Result<HttpRequest, Error>;
     fn parse(&self, req: &DecisionRequest, res: &HttpResponse) -> Result<DecisionResponse, Error>;
 }
 ```
 
-Two pure functions are the whole extension surface. `resolve("provider/model")`
-picks the adapter.
+Three pure functions are the whole extension surface. A `Registry` maps
+prefixes to providers (built-ins plus the user's); `resolve("provider/model")`
+is the shortcut for built-ins only. Going through a registry (as every
+binding does):
+
+```
+Capabilities::check(req)  →  build  →  host sends  →  parse  →  DecisionResponse::check(req)
+```
+
+so every provider, built-in or custom, gets the same guarantees: requests it
+can't take fail before any I/O (`Unsupported`, with details), and malformed
+answers fail as `BadResponse` instead of reaching the app.
+
+### Extension ladder
+
+| Rung | User writes | Status |
+|---|---|---|
+| 0. Config | `base_url`, `headers`, `options` | built |
+| 1. Dialect | data describing a System One / OpenAI variant | planned |
+| 2. Codec | `build` + `parse` (+ `capabilities`) in their language | Rust: built (`Registry`). JS/Python: planned |
+| 3. Engine | one async `decide()`; for non-HTTP and local models | planned |
 
 ## Provider mapping
 
@@ -112,14 +138,51 @@ Numbered records live in [adr/](adr/README.md); the list below is the original s
 - **No live tests in CI.** Real calls need keys and spend tokens on every
   run; golden fixtures cover the wire formats. Live contract tests are an
   optional add-on (see future-work).
-- **No capability struct yet.** Limits live in the adapter. Add one when a
-  second adapter needs shared validation.
+- **`Capabilities` is data, checked by the core.** Limits, accepted media
+  (`type/*` patterns), question kinds, `probabilities` source and
+  `locality` (cloud, network, device). Replaced per-adapter limit code once
+  custom providers and routing needed the same checks.
+- **Registry is a value, not a global.** Each client owns one. Custom names are
+  free (`[a-z0-9_-]{1,64}`) and **registering a taken name is an error**
+  (`name_taken`) unless the caller uses `replace`. We rejected a reserved
+  namespace (`x-acme/`): its only benefit is that a future built-in can never
+  clash, and that clash already fails loudly at start-up. Readable model
+  strings matter more. The changelog lists every new built-in prefix.
+- **Every response is checked** (`DecisionResponse::check`): every question
+  answered once, kinds match, ids are the caller's, probabilities finite and
+  in `[0, 1]` (1e-3 slack). Score `value` is only checked to be finite.
+- **Errors carry `details`**: a stable `reason` (snake_case) plus provider,
+  question/option ids, limit and actual counts, MIME type, config field
+  *name*. Only fields that are safe to log exist, so leaking content is not
+  possible by construction. Tests plant a canary in keys, headers, input,
+  media, instructions, descriptions, bodies and config values and check no
+  error contains it.
+- **serde messages are not echoed** when they could quote a value (`invalid
+  type: string "…"`); only position and category are kept. Messages naming
+  our own fields (`missing field`) are kept.
+- **`ProviderError`** is reserved for errors thrown by user code (custom
+  codecs and engines), so they can't be confused with ours.
+- **`probability_source`** on every response (`provider`, `logprob`, `nli`):
+  numbers from different sources are never on one scale.
+- **Local models: label scoring, not text parsing** *(planned)*. A generated
+  "0.8" is text, not a measured probability; free text drifts from the
+  format; sampling isn't repeatable; generation costs more than one forward
+  pass. Runtimes that expose no log-probs return `Unsupported`
+  (`no_logprobs`), not sampled guesses.
+- **No default local model.** Consumers choose. Library-assisted choice is
+  future work.
+- **Packaging:** anything that pulls in a model runtime is a separate package
+  (Python extras, `@letsdecide/*`, separate SwiftPM/Gradle artifacts); HTTP
+  runtime shims and our own code stay in the main packages.
 - **Licence: Apache-2.0** (patent grant).
 
 ## Planned
 
 The backlog, including unverified Gemini behaviour and release steps, is in
 [future-work.md](future-work.md). Built only when a real need appears.
+
+Custom and local providers: phases P2–P6 in
+[plan-custom-and-local-providers.md](plan-custom-and-local-providers.md).
 
 ## Open questions
 
@@ -133,7 +196,15 @@ The backlog, including unverified Gemini behaviour and release steps, is in
 
 ## Security
 
-- Keys live in memory only; `Config`'s `Debug` redacts them.
+- Keys live in memory only; `Config`'s `Debug` redacts the key, header
+  values, option values and the `base_url` query string.
 - No telemetry; the core makes no network calls.
-- Errors never include keys or request bodies.
+- Errors never include keys, header values, input, media, instructions,
+  descriptions, bodies or config values (enforced by canary tests). Errors
+  thrown by user code are the user's responsibility; bindings will wrap them
+  as `ProviderError` (planned, P2).
+- `headers` reject names that aren't HTTP tokens and values with line breaks
+  (no header injection).
+- Multi-tenant apps that load dialects (planned) from tenant settings must
+  allowlist hosts: a tenant-chosen URL is an SSRF vector.
 - Browser code: a key in client code is public. Call through your backend.
