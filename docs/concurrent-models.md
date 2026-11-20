@@ -144,7 +144,7 @@ new Client({
 });
 ```
 
-**Open: a guard so a key only goes to its own provider.** Engines never see the
+**Open, awaiting the maintainer's decision: a guard so a key only goes to its own provider.** It would change behaviour for clients that use one top-level key for two providers today, so it needs a CHANGELOG "Changed" entry and an ADR extending 0006. Engines never see the
 config, so the guard can't live in the panel. `fallback` has the same leak
 today. The proposal, under discussion with the custom-providers work, puts it
 in the client: remember the first provider that received top-level

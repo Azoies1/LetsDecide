@@ -150,3 +150,14 @@ test("a panel listing itself stops at MAX_DEPTH", async () => {
   // The innermost call fails on depth; each level above reports it as below quorum.
   await assert.rejects(c.decide("panel/p", request), (e) => e.code === "InvalidRequest" && e.details?.reason === "below_quorum");
 });
+
+test("engine extras pass through; checked fields win and are still checked", async () => {
+  const base = { model: "m", input_tokens: null, answers: { billing: { kind: "yesno", probability: 0.5 }, team: { kind: "choice", choice: "pay", confidence: null, probabilities: {} } } };
+  const extra = { async decide() { return { ...base, trace: "t1" }; } }; // no probability_source
+  const bad = { async decide() { return { ...base, answers: { billing: base.answers.billing }, trace: "t1" }; } };
+  const c = new Client({}, { wasm, engines: { extra, bad } });
+  const res = await c.decide("extra/x", request);
+  assert.equal(res.trace, "t1");
+  assert.equal(res.probability_source, "provider"); // filled by the check, not the engine
+  await assert.rejects(c.decide("bad/x", request), (e) => e.code === "BadResponse");
+});
