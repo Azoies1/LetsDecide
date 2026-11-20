@@ -27,7 +27,13 @@ pub struct HttpResponse {
 /// option values.
 #[derive(Clone, Default, Deserialize)]
 pub struct Config {
+    /// Static key. Required for `gemini/*` (sent as `x-goog-api-key`).
     pub api_key: Option<String>,
+    /// OAuth access token, sent as `Authorization: Bearer`. Used by `clef/*`
+    /// (and the other Bearer providers) in place of `api_key`; it wins when
+    /// both are set. The core never fetches or refreshes tokens: the host does
+    /// that and passes the current token in.
+    pub access_token: Option<String>,
     /// Required for `systemone/*`; overrides the preset default otherwise.
     pub base_url: Option<String>,
     /// Required for `clef/*`.
@@ -47,6 +53,10 @@ impl fmt::Debug for Config {
         let option_names: Vec<&str> = self.options.keys().map(String::as_str).collect();
         f.debug_struct("Config")
             .field("api_key", &self.api_key.as_ref().map(|_| "<redacted>"))
+            .field(
+                "access_token",
+                &self.access_token.as_ref().map(|_| "<redacted>"),
+            )
             // Query strings can carry tokens.
             .field(
                 "base_url",
@@ -276,6 +286,26 @@ pub fn http_error(res: &HttpResponse) -> Error {
     }
 }
 
+/// Shared by adapters: the JSON body plus `provider_extras`. An extra key the
+/// adapter already sets is an error, never a silent overwrite.
+pub(crate) fn encode<T: Serialize>(body: &T, req: &DecisionRequest) -> Result<Vec<u8>, Error> {
+    let invalid = |m: String| Error::new(ErrorCode::InvalidRequest, m);
+    if req.provider_extras.is_empty() {
+        return serde_json::to_vec(body).map_err(|e| invalid(e.to_string()));
+    }
+    let mut v = serde_json::to_value(body).map_err(|e| invalid(e.to_string()))?;
+    let obj = v.as_object_mut().expect("bodies are objects");
+    for (k, x) in &req.provider_extras {
+        if obj.contains_key(k) {
+            return Err(invalid(format!(
+                "provider_extras: `{k}` is set by the adapter"
+            )));
+        }
+        obj.insert(k.clone(), x.clone());
+    }
+    serde_json::to_vec(&v).map_err(|e| invalid(e.to_string()))
+}
+
 /// Shared by adapters: JSON POST, key as `Bearer` or raw in a custom header.
 /// Adapters call [`apply_headers`] last.
 pub(crate) fn post(
@@ -286,12 +316,15 @@ pub(crate) fn post(
     body: Vec<u8>,
 ) -> HttpRequest {
     let mut headers = vec![("content-type".to_owned(), "application/json".to_owned())];
-    if let Some(key) = &cfg.api_key {
-        let value = if bearer {
-            format!("Bearer {key}")
-        } else {
-            key.clone()
-        };
+    let credential = if bearer {
+        cfg.access_token
+            .as_ref()
+            .or(cfg.api_key.as_ref())
+            .map(|t| format!("Bearer {t}"))
+    } else {
+        cfg.api_key.clone()
+    };
+    if let Some(value) = credential {
         headers.push((key_header.to_owned(), value));
     }
     HttpRequest {

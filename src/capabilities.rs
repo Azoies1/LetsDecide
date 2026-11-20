@@ -49,6 +49,10 @@ pub struct Capabilities {
     /// Question kinds accepted (`yesno`, `choice`, `score`). Empty: all.
     #[serde(default)]
     pub question_kinds: Vec<String>,
+    /// Ids may use `[A-Za-z0-9_-]{1,128}` (Gemini) instead of the strict
+    /// `[a-z0-9_]{1,64}`.
+    #[serde(default)]
+    pub wide_ids: bool,
     #[serde(default)]
     pub probabilities: ProbabilitySource,
     #[serde(default)]
@@ -65,6 +69,7 @@ impl Default for Capabilities {
             max_media: None,
             media: vec![],
             question_kinds: vec![],
+            wide_ids: false,
             probabilities: ProbabilitySource::Provider,
             locality: Locality::Cloud,
         }
@@ -83,7 +88,11 @@ impl Capabilities {
     /// Validates the request, then checks it against these capabilities.
     /// Errors are `InvalidRequest` or `Unsupported`, with [`Details`].
     pub fn check(&self, req: &DecisionRequest) -> Result<(), Error> {
-        req.validate()?;
+        if self.wide_ids {
+            req.validate_with(crate::gemini::id_ok)?;
+        } else {
+            req.validate()?;
+        }
         let over = |reason, max: usize, n: usize, what: String| {
             Err(Error::detailed(
                 ErrorCode::Unsupported,

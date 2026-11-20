@@ -4,8 +4,8 @@
 
 use crate::error::safe_serde_message;
 use crate::{
-    http_error, Capabilities, Config, DecisionRequest, DecisionResponse, Details, Error, ErrorCode,
-    HttpResponse, Registry,
+    estimate_cost_usd, http_error, Capabilities, Config, DecisionRequest, DecisionResponse,
+    Details, Error, ErrorCode, HttpResponse, Registry,
 };
 use serde::{Deserialize, Serialize};
 
@@ -47,6 +47,15 @@ struct HttpOut {
     url: String,
     headers: Vec<(String, String)>,
     body: String,
+}
+
+// Serialised directly (not via `Value`) so f32 probabilities keep their short form.
+#[derive(Serialize)]
+struct Parsed {
+    #[serde(flatten)]
+    response: DecisionResponse,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    estimated_cost_usd: Option<f64>,
 }
 
 #[derive(Deserialize)]
@@ -94,11 +103,16 @@ pub fn build(model: &str, request: &str, config: &str) -> String {
 }
 
 /// `response`: `{status, headers: [[k, v]], body}`. Returns the canonical
-/// response, already [checked](DecisionResponse::check).
+/// response, already [checked](DecisionResponse::check), plus
+/// `estimated_cost_usd` when the model's price is known.
 pub fn parse(model: &str, request: &str, response: &str) -> String {
     run(|| {
         let req: DecisionRequest = serde_json::from_str(request).map_err(invalid("request"))?;
-        Registry::builtin().parse(model, &req, &http_in(response)?)
+        let out = Registry::builtin().parse(model, &req, &http_in(response)?)?;
+        Ok(Parsed {
+            estimated_cost_usd: out.input_tokens.and_then(|t| estimate_cost_usd(model, t)),
+            response: out,
+        })
     })
 }
 

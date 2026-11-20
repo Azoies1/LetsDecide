@@ -73,6 +73,26 @@ test("invalid requests fail before any network call", async () => {
   await assert.rejects(client.decide("jev/jev-latest", bad), { code: "InvalidRequest" });
 });
 
+test("clef uses an OAuth token, refreshed per request via a function", async () => {
+  const seen = [];
+  const fetch = async (_url, init) => {
+    seen.push(init.headers.authorization);
+    return reply(401, {})();
+  };
+  let n = 0;
+  const client = new Client({ accountId: "a", accessToken: async () => `tok${++n}` }, { fetch, wasm });
+  for (let i = 0; i < 2; i++) await assert.rejects(client.decide("clef/clef-flash", request), { code: "Auth" });
+  assert.deepEqual(seen, ["Bearer tok1", "Bearer tok2"]);
+});
+
+test("gemini and clef fail fast without credentials", async () => {
+  const fetch = async () => assert.fail("must not send");
+  const client = new Client({ accountId: "a" }, { fetch, wasm });
+  for (const m of ["gemini/gemini-decision-1", "clef/clef-flash"]) {
+    await assert.rejects(client.decide(m, request), { code: "InvalidRequest" });
+  }
+});
+
 test("config headers are sent and replace same-named ones", async () => {
   let sent;
   const fetch = async (url, init) => {

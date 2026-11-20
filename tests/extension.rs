@@ -58,6 +58,7 @@ fn answers(a: Answer) -> DecisionResponse {
         model: None,
         answers: BTreeMap::from([("q".to_owned(), a)]),
         input_tokens: None,
+        block_reason: None,
         probability_source: ProbabilitySource::Logprob,
     }
 }
@@ -156,6 +157,8 @@ fn capabilities_are_checked_before_build_with_details() {
     img.media.push(Media {
         mime_type: "image/png".into(),
         data: "QUJD".into(),
+        uri: None,
+        options: Default::default(),
     });
     let d = r.build("acme/m", &img, &cfg).unwrap_err().details.unwrap();
     assert_eq!(
@@ -213,6 +216,7 @@ fn response_check_catches_malformed_answers() {
         answers(Answer::Choice {
             choice: choice.into(),
             confidence: conf,
+            confidence_source: None,
             probabilities: p,
         })
     };
@@ -464,4 +468,22 @@ fn json_entry_points() {
     let v: Value = serde_json::from_str(&json::build("nope/m", &yesno_json(), "{}")).unwrap();
     assert_eq!(v["error"]["details"]["reason"], "unknown_provider");
     assert_eq!(v["error"]["details"]["provider"], "nope");
+}
+
+#[test]
+fn registry_accepts_gemini_wide_ids() {
+    let r = req(
+        json!({ "input": "x", "questions": { "Is-Positive": { "kind": "yesno", "instructions": "?" } } }),
+    );
+    let cfg = Config {
+        api_key: Some("k".into()),
+        ..Default::default()
+    };
+    assert!(Registry::builtin()
+        .build("gemini/gemini-decision-1", &r, &cfg)
+        .is_ok());
+    let e = Registry::builtin()
+        .build("jev/jev-latest", &r, &cfg)
+        .unwrap_err();
+    assert_eq!(e.code, ErrorCode::InvalidRequest);
 }

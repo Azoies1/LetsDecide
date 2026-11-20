@@ -1,9 +1,10 @@
 //! OpenAI Decisions adapter (`POST /v1/decisions`, model `gpt-6-luna`).
 //!
-//! Verified against OpenAI's reference. Images go as base64 data URLs.
+//! Verified against OpenAI's reference. Images go as base64 data URLs or public
+//! http(s) URLs (`Media.uri`); file ids are not supported by the API.
 
 use crate::error::safe_serde_message;
-use crate::provider::post;
+use crate::provider::{encode, post};
 use crate::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -102,6 +103,7 @@ impl Provider for OpenAi {
         cfg: &Config,
     ) -> Result<HttpRequest, Error> {
         caps().check(req)?;
+        req.require_portable(true)?;
         let input = match (&req.input, req.media.is_empty()) {
             (Value::String(_), true) => req.input.clone(),
             (Value::String(_) | Value::Object(_) | Value::Array(_), _) => {
@@ -112,7 +114,7 @@ impl Provider for OpenAi {
                 let images = req
                     .media
                     .iter()
-                    .map(|i| json!({ "type": "input_image", "image_url": i.data_url() }));
+                    .map(|i| json!({ "type": "input_image", "image_url": i.url() }));
                 let parts: Vec<Value> = std::iter::once(text).chain(images).collect();
                 json!([{ "role": "user", "content": parts }])
             }
@@ -126,7 +128,7 @@ impl Provider for OpenAi {
         let mut questions = Vec::with_capacity(req.questions.len());
         for (id, q) in &req.questions {
             questions.push(match q {
-                Question::YesNo { instructions } => Wire::Predicate {
+                Question::YesNo { instructions, .. } => Wire::Predicate {
                     name: id,
                     instructions,
                 },
@@ -154,12 +156,14 @@ impl Provider for OpenAi {
                 },
             });
         }
-        let body = serde_json::to_vec(&Body {
-            model,
-            input,
-            questions,
-        })
-        .map_err(|e| Error::new(ErrorCode::InvalidRequest, e.to_string()))?;
+        let body = encode(
+            &Body {
+                model,
+                input,
+                questions,
+            },
+            req,
+        )?;
         let mut http = post(
             "https://api.openai.com/v1/decisions".into(),
             "authorization",
@@ -207,6 +211,7 @@ impl Provider for OpenAi {
                 ) => Answer::Choice {
                     choice,
                     confidence: Some(confidence),
+                    confidence_source: Some(ConfidenceSource::Provider),
                     probabilities: probabilities
                         .into_iter()
                         .map(|p| (p.value, p.probability))
@@ -222,6 +227,7 @@ impl Provider for OpenAi {
                 ) => Answer::Score {
                     value: score,
                     confidence: Some(confidence),
+                    confidence_source: Some(ConfidenceSource::Provider),
                     probabilities: probabilities
                         .into_iter()
                         .map(|p| (p.label, p.probability))
@@ -236,6 +242,7 @@ impl Provider for OpenAi {
             answers,
             input_tokens: reply.usage.and_then(|u| u.input_tokens),
             probability_source: ProbabilitySource::Provider,
+            block_reason: None,
         })
     }
 }

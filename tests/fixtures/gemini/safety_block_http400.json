@@ -51,6 +51,7 @@
     "ok": {
       "model": null,
       "input_tokens": null,
+      "block_reason": "Input blocked",
       "answers": {
         "q": {
           "kind": "refused"

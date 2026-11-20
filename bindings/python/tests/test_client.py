@@ -99,6 +99,33 @@ async def test_async_client():
     assert e.value.code == "Auth"
 
 
+def test_clef_oauth_token_callable_is_refreshed_per_request():
+    seen = []
+
+    def handler(req):
+        seen.append(req.headers["authorization"])
+        return httpx.Response(401, json={})
+
+    n = iter(range(1, 10))
+    c = client(handler, account_id="a", access_token=lambda: f"tok{next(n)}")
+    for _ in range(2):
+        with pytest.raises(LetsDecideError) as e:
+            c.decide("clef/clef-flash", REQUEST)
+        assert e.value.code == "Auth"
+    assert seen == ["Bearer tok1", "Bearer tok2"]
+
+
+def test_gemini_and_clef_fail_fast_without_credentials():
+    def handler(req):
+        raise AssertionError("must not send")
+
+    c = client(handler, account_id="a")
+    for model in ("gemini/gemini-decision-1", "clef/clef-flash"):
+        with pytest.raises(LetsDecideError) as e:
+            c.decide(model, REQUEST)
+        assert e.value.code == "InvalidRequest"
+
+
 def test_config_headers_are_sent_and_replace_same_named_ones():
     sent = {}
 
