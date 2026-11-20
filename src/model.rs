@@ -190,25 +190,36 @@ pub(crate) fn confidence(
 impl DecisionRequest {
     /// For providers without Gemini-only features: URIs, media options, yes/no
     /// descriptions. `image_urls`: the provider takes public image URLs.
-    pub(crate) fn require_portable(&self, image_urls: bool) -> Result<(), Error> {
+    ///
+    /// `typed_media`: the encoding takes URIs and per-media options itself
+    /// (Gemini's typed blocks). `image_urls`: public http(s) image URLs are
+    /// accepted (OpenAI). `descriptions`: yes/no descriptions are accepted.
+    pub(crate) fn require_portable(
+        &self,
+        typed_media: bool,
+        image_urls: bool,
+        descriptions: bool,
+    ) -> Result<(), Error> {
         let un = |m: String| Err(Error::new(ErrorCode::Unsupported, m));
-        for u in self.media.iter().filter_map(|m| m.uri.as_deref()) {
-            if !image_urls {
-                return un("URI media is supported by Gemini and OpenAI (images) only".into());
+        if !typed_media {
+            for u in self.media.iter().filter_map(|m| m.uri.as_deref()) {
+                if !image_urls {
+                    return un("this provider takes media as `data`, not `uri`".into());
+                }
+                if !(u.starts_with("https://") || u.starts_with("http://")) {
+                    return un("media `uri` must be a public http(s) URL here".into());
+                }
             }
-            if !(u.starts_with("https://") || u.starts_with("http://")) {
-                return un("media `uri` must be a public http(s) URL here".into());
+            if self.media.iter().any(|m| !m.options.is_empty()) {
+                return un("this provider takes no per-media options".into());
             }
-        }
-        if self.media.iter().any(|m| !m.options.is_empty()) {
-            return un("per-media options are supported by Gemini only".into());
         }
         let described = self.questions.values().any(|q| {
             matches!(q, Question::YesNo { yes_description, no_description, .. }
                 if yes_description.is_some() || no_description.is_some())
         });
-        if described {
-            return un("yes/no descriptions are supported by Gemini only".into());
+        if described && !descriptions {
+            return un("this provider takes no yes/no descriptions".into());
         }
         Ok(())
     }

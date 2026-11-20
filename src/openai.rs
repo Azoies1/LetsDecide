@@ -1,25 +1,17 @@
-//! OpenAI Decisions adapter (`POST /v1/decisions`, model `gpt-6-luna`).
+//! The OpenAI wire family (`POST /v1/decisions`, model `gpt-6-luna`).
+//! Endpoint, auth and limits come from the [`Dialect`]
+//! (`spec/dialects/openai.json`), so compatible endpoints are dialects too.
 //!
 //! Verified against OpenAI's reference. Images go as base64 data URLs or public
 //! http(s) URLs (`Media.uri`); file ids are not supported by the API.
 
+use crate::dialect::{Dialect, MediaEncoding};
 use crate::error::safe_serde_message;
-use crate::provider::{encode, post};
+use crate::provider::encode;
 use crate::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::BTreeMap;
-
-pub struct OpenAi;
-
-fn caps() -> Capabilities {
-    Capabilities {
-        max_questions: Some(400),
-        max_levels: Some(10),
-        media: vec!["image/*".into()],
-        ..Default::default()
-    }
-}
 
 #[derive(Serialize)]
 struct Body<'a> {
@@ -91,158 +83,176 @@ struct ScoreProb {
     probability: f32,
 }
 
-impl Provider for OpenAi {
-    fn capabilities(&self, _model: &str) -> Capabilities {
-        caps()
-    }
-
-    fn build(
-        &self,
-        model: &str,
-        req: &DecisionRequest,
-        cfg: &Config,
-    ) -> Result<HttpRequest, Error> {
-        caps().check(req)?;
-        req.require_portable(true)?;
-        let input = match (&req.input, req.media.is_empty()) {
-            (Value::String(_), true) => req.input.clone(),
-            (Value::String(_) | Value::Object(_) | Value::Array(_), _) => {
-                let text = match &req.input {
-                    Value::String(t) => json!({ "type": "input_text", "text": t }),
-                    data => json!({ "type": "input_json", "data": data }),
-                };
-                let images = req
-                    .media
-                    .iter()
-                    .map(|i| json!({ "type": "input_image", "image_url": i.url() }));
-                let parts: Vec<Value> = std::iter::once(text).chain(images).collect();
-                json!([{ "role": "user", "content": parts }])
-            }
-            _ => {
-                return Err(Error::new(
-                    ErrorCode::InvalidRequest,
-                    "input must be a string or JSON",
-                ))
-            }
-        };
-        let mut questions = Vec::with_capacity(req.questions.len());
-        for (id, q) in &req.questions {
-            questions.push(match q {
-                Question::YesNo { instructions, .. } => Wire::Predicate {
-                    name: id,
-                    instructions,
-                },
-                Question::Choice {
-                    instructions,
-                    options,
-                } => Wire::Choice {
-                    name: id,
-                    instructions,
-                    choices: options
-                        .iter()
-                        .map(|(v, d)| json!({ "value": v, "description": d }))
-                        .collect(),
-                },
-                Question::Score {
-                    instructions,
-                    levels,
-                } => Wire::Score {
-                    name: id,
-                    instructions,
-                    levels: levels
-                        .iter()
-                        .map(|l| json!({ "label": l.id, "description": l.description }))
-                        .collect(),
-                },
-            });
-        }
-        let body = encode(
-            &Body {
-                model,
-                input,
-                questions,
-            },
-            req,
-        )?;
-        let mut http = post(
-            "https://api.openai.com/v1/decisions".into(),
-            "authorization",
-            true,
-            cfg,
-            body,
-        );
-        apply_headers(&mut http, cfg)?;
-        Ok(http)
-    }
-
-    fn parse(&self, req: &DecisionRequest, res: &HttpResponse) -> Result<DecisionResponse, Error> {
-        if !(200..300).contains(&res.status) {
-            return Err(http_error(res));
-        }
-        let bad = |m: String| Error {
-            status: Some(res.status),
-            ..Error::new(ErrorCode::BadResponse, m)
-        };
-        let reply: Reply = serde_json::from_slice(&res.body)
-            .map_err(|e| bad(safe_serde_message("response body", &e)))?;
-        if reply.answers.len() != req.questions.len() {
-            return Err(bad(format!(
-                "expected {} answers, got {}",
-                req.questions.len(),
-                reply.answers.len()
-            )));
-        }
-
-        // Answers come back in question order.
-        let mut answers = BTreeMap::new();
-        for ((id, q), raw) in req.questions.iter().zip(reply.answers) {
-            let answer = match (q, raw) {
-                (_, RawAnswer::Refusal) => Answer::Refused,
-                (Question::YesNo { .. }, RawAnswer::Predicate { probability }) => {
-                    Answer::YesNo { probability }
-                }
-                (
-                    Question::Choice { .. },
-                    RawAnswer::Choice {
-                        choice,
-                        confidence,
-                        probabilities,
-                    },
-                ) => Answer::Choice {
-                    choice,
-                    confidence: Some(confidence),
-                    confidence_source: Some(ConfidenceSource::Provider),
-                    probabilities: probabilities
-                        .into_iter()
-                        .map(|p| (p.value, p.probability))
-                        .collect(),
-                },
-                (
-                    Question::Score { .. },
-                    RawAnswer::Score {
-                        score,
-                        confidence,
-                        probabilities,
-                    },
-                ) => Answer::Score {
-                    value: score,
-                    confidence: Some(confidence),
-                    confidence_source: Some(ConfidenceSource::Provider),
-                    probabilities: probabilities
-                        .into_iter()
-                        .map(|p| (p.label, p.probability))
-                        .collect(),
-                },
-                _ => return Err(bad(format!("answer `{id}` has the wrong type"))),
+pub(crate) fn build(
+    d: &Dialect,
+    model: &str,
+    req: &DecisionRequest,
+    cfg: &Config,
+) -> Result<HttpRequest, Error> {
+    d.capabilities.check(req)?;
+    req.require_portable(
+        false,
+        d.media_encoding == MediaEncoding::ContentParts,
+        false,
+    )?;
+    let input = match (&req.input, req.media.is_empty()) {
+        (Value::String(_), true) => req.input.clone(),
+        (Value::String(_) | Value::Object(_) | Value::Array(_), _) => {
+            let text = match &req.input {
+                Value::String(t) => json!({ "type": "input_text", "text": t }),
+                data => json!({ "type": "input_json", "data": data }),
             };
-            answers.insert(id.clone(), answer);
+            let images = req
+                .media
+                .iter()
+                .map(|i| json!({ "type": "input_image", "image_url": i.url() }));
+            let parts: Vec<Value> = std::iter::once(text).chain(images).collect();
+            json!([{ "role": "user", "content": parts }])
         }
-        Ok(DecisionResponse {
-            model: reply.model,
-            answers,
-            input_tokens: reply.usage.and_then(|u| u.input_tokens),
-            probability_source: ProbabilitySource::Provider,
-            block_reason: None,
-        })
+        _ => {
+            return Err(Error::new(
+                ErrorCode::InvalidRequest,
+                "input must be a string or JSON",
+            ))
+        }
+    };
+    let mut questions = Vec::with_capacity(req.questions.len());
+    for (id, q) in &req.questions {
+        questions.push(match q {
+            Question::YesNo { instructions, .. } => Wire::Predicate {
+                name: id,
+                instructions,
+            },
+            Question::Choice {
+                instructions,
+                options,
+            } => Wire::Choice {
+                name: id,
+                instructions,
+                choices: options
+                    .iter()
+                    .map(|(v, d)| json!({ "value": v, "description": d }))
+                    .collect(),
+            },
+            Question::Score {
+                instructions,
+                levels,
+            } => Wire::Score {
+                name: id,
+                instructions,
+                levels: levels
+                    .iter()
+                    .map(|l| json!({ "label": l.id, "description": l.description }))
+                    .collect(),
+            },
+        });
     }
+    let body = encode(
+        &Body {
+            model,
+            input,
+            questions,
+        },
+        req,
+    )?;
+    let mut headers = vec![("content-type".to_owned(), "application/json".to_owned())];
+    headers.extend(d.credential(cfg)?);
+    let mut http = HttpRequest {
+        method: "POST",
+        url: d.url(model, cfg)?,
+        headers,
+        body,
+    };
+    apply_headers(&mut http, cfg)?;
+    Ok(http)
+}
+
+pub(crate) fn parse(
+    d: &Dialect,
+    req: &DecisionRequest,
+    res: &HttpResponse,
+) -> Result<DecisionResponse, Error> {
+    if let Some(reason) = d.blocked(res) {
+        return Ok(DecisionResponse {
+            model: None,
+            answers: req
+                .questions
+                .keys()
+                .map(|id| (id.clone(), Answer::Refused))
+                .collect(),
+            input_tokens: None,
+            probability_source: ProbabilitySource::Provider,
+            block_reason: Some(reason),
+        });
+    }
+    if !(200..300).contains(&res.status) {
+        return Err(http_error(res));
+    }
+    let bad = |m: String| Error {
+        status: Some(res.status),
+        ..Error::new(ErrorCode::BadResponse, m)
+    };
+    let v: Value = serde_json::from_slice(&res.body)
+        .map_err(|e| bad(safe_serde_message("response body", &e)))?;
+    let reply: Reply = serde_json::from_value(d.unwrap_envelope(v))
+        .map_err(|e| bad(safe_serde_message("response body", &e)))?;
+    if reply.answers.len() != req.questions.len() {
+        return Err(bad(format!(
+            "expected {} answers, got {}",
+            req.questions.len(),
+            reply.answers.len()
+        )));
+    }
+
+    // Answers come back in question order.
+    let mut answers = BTreeMap::new();
+    for ((id, q), raw) in req.questions.iter().zip(reply.answers) {
+        let answer = match (q, raw) {
+            (_, RawAnswer::Refusal) => Answer::Refused,
+            (Question::YesNo { .. }, RawAnswer::Predicate { probability }) => {
+                Answer::YesNo { probability }
+            }
+            (
+                Question::Choice { .. },
+                RawAnswer::Choice {
+                    choice,
+                    confidence,
+                    probabilities,
+                },
+            ) => Answer::Choice {
+                choice,
+                confidence: Some(confidence),
+                confidence_source: Some(ConfidenceSource::Provider),
+                probabilities: probabilities
+                    .into_iter()
+                    .map(|p| (p.value, p.probability))
+                    .collect(),
+            },
+            (
+                Question::Score { .. },
+                RawAnswer::Score {
+                    score,
+                    confidence,
+                    probabilities,
+                },
+            ) => Answer::Score {
+                value: score,
+                confidence: Some(confidence),
+                confidence_source: Some(ConfidenceSource::Provider),
+                probabilities: probabilities
+                    .into_iter()
+                    .map(|p| (p.label, p.probability))
+                    .collect(),
+            },
+            _ => return Err(bad(format!("answer `{id}` has the wrong type"))),
+        };
+        answers.insert(id.clone(), answer);
+    }
+    Ok(DecisionResponse {
+        model: reply.model,
+        answers,
+        input_tokens: reply.usage.and_then(|u| u.input_tokens),
+        probability_source: ProbabilitySource::Provider,
+        block_reason: None,
+    })
 }

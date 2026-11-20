@@ -53,6 +53,9 @@ pub struct Capabilities {
     /// `[a-z0-9_]{1,64}`.
     #[serde(default)]
     pub wide_ids: bool,
+    /// Yes/no questions may carry `yes_description` / `no_description`.
+    #[serde(default)]
+    pub yesno_descriptions: bool,
     #[serde(default)]
     pub probabilities: ProbabilitySource,
     #[serde(default)]
@@ -70,6 +73,7 @@ impl Default for Capabilities {
             media: vec![],
             question_kinds: vec![],
             wide_ids: false,
+            yesno_descriptions: false,
             probabilities: ProbabilitySource::Provider,
             locality: Locality::Cloud,
         }

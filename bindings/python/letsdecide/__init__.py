@@ -18,7 +18,9 @@ __all__ = [
     "capabilities",
     "check",
     "classify_http",
+    "dialect",
     "mock_engine",
+    "resolve_dialect",
     "validate",
 ]
 
@@ -99,6 +101,35 @@ def capabilities(model: str) -> dict:
     return _unwrap(_core.capabilities(model))
 
 
+def dialect(name: str) -> dict:
+    """A built-in dialect (`jev`, `clef`, `gemini`, `openai`, `systemone`) as a
+    dict, to read or extend."""
+    return _unwrap(_core.dialect(name))
+
+
+def resolve_dialect(spec: dict) -> dict:
+    """Validates a dialect and expands `extends`. Raises `LetsDecideError`."""
+    return _unwrap(_core.resolve_dialect(json.dumps(spec)))
+
+
+class _DialectCodec:
+    """A dialect run by the core, as a codec. Validated when the client is made."""
+
+    def __init__(self, spec):
+        self._dialect = json.dumps(resolve_dialect(spec))
+        self.capabilities = json.loads(self._dialect)["capabilities"]
+
+    def build(self, model, request, config):
+        return _unwrap(
+            _core.build_dialect(self._dialect, model, json.dumps(request), json.dumps(config))
+        )
+
+    def parse(self, request, response):
+        return _unwrap(
+            _core.parse_dialect(self._dialect, json.dumps(request), json.dumps(response))
+        )
+
+
 def _from_user_code(name, e):
     """Tags our errors with the provider; wraps anything else as `ProviderError`.
     The original is kept on `.original`, not chained, so tracebacks and loggers
@@ -146,6 +177,7 @@ class _Base:
         headers=None,
         providers=None,
         engines=None,
+        dialects=None,
         replace=(),
         **unknown,
     ):
@@ -158,7 +190,10 @@ class _Base:
         `providers`: custom HTTP codecs by name (`build`, `parse`, optional
         `capabilities`). `engines`: custom engines by name (`decide`, optional
         `capabilities`; a `decide=` keyword receives a callback to call other
-        models). `replace`: built-in names they may override."""
+        models). `dialects`: providers described as data, e.g. `{"acme":
+        {"extends": "jev", "base_url": ..., "path": ...}}` (see
+        docs/dialects.md); validated here. `replace`: built-in names they may
+        override (e.g. a patched `gemini` dialect)."""
         for k in unknown:
             hint = (
                 f"set it per provider: by_provider[<name>][{k!r}]"
@@ -177,7 +212,8 @@ class _Base:
                     provider=name,
                 )
         self._custom = {}
-        for kind, table in (("codec", providers or {}), ("engine", engines or {})):
+        tables = [("codec", providers or {}), ("engine", engines or {}), ("dialect", dialects or {})]
+        for kind, table in tables:
             for name, impl in table.items():
                 if not _NAME.fullmatch(name):
                     raise _invalid(
@@ -191,6 +227,12 @@ class _Base:
                         reason="name_taken",
                         provider=name,
                     )
+                if kind == "dialect":
+                    try:
+                        impl = _DialectCodec(impl)
+                    except LetsDecideError as e:
+                        raise _from_user_code(name, e) from None
+                    kind = "codec"
                 needs = ("build", "parse") if kind == "codec" else ("decide",)
                 for fn in needs:
                     if not callable(getattr(impl, fn, None)):

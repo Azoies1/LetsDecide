@@ -1,0 +1,13 @@
+{
+  "_doc": "Any server that speaks the System One shape exactly. Set base_url per provider.",
+  "family": "systemone",
+  "path": "/v1/systemone",
+  "auth": {
+    "required": false
+  },
+  "input_field": "state",
+  "media_encoding": "none",
+  "capabilities": {
+    "locality": "network"
+  }
+}

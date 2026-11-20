@@ -36,3 +36,23 @@ pub fn check(request: &str, response: &str) -> String {
 pub fn classify_http(response: &str) -> String {
     letsdecide::json::classify_http(response)
 }
+
+#[wasm_bindgen]
+pub fn dialect(name: &str) -> String {
+    letsdecide::json::dialect(name)
+}
+
+#[wasm_bindgen]
+pub fn resolve_dialect(dialect: &str) -> String {
+    letsdecide::json::resolve_dialect(dialect)
+}
+
+#[wasm_bindgen]
+pub fn build_dialect(dialect: &str, model: &str, request: &str, config: &str) -> String {
+    letsdecide::json::build_dialect(dialect, model, request, config)
+}
+
+#[wasm_bindgen]
+pub fn parse_dialect(dialect: &str, request: &str, response: &str) -> String {
+    letsdecide::json::parse_dialect(dialect, request, response)
+}

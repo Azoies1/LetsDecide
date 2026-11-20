@@ -44,3 +44,27 @@ pub fn check(request: String, response: String) -> String {
 pub fn classify_http(response: String) -> String {
     letsdecide::json::classify_http(&response)
 }
+
+/// A built-in dialect as JSON.
+#[uniffi::export]
+pub fn dialect(name: String) -> String {
+    letsdecide::json::dialect(&name)
+}
+
+/// Validates a dialect and expands `extends`.
+#[uniffi::export]
+pub fn resolve_dialect(dialect: String) -> String {
+    letsdecide::json::resolve_dialect(&dialect)
+}
+
+/// Builds a request with a dialect; `model` without the `provider/` prefix.
+#[uniffi::export]
+pub fn build_dialect(dialect: String, model: String, request: String, config: String) -> String {
+    letsdecide::json::build_dialect(&dialect, &model, &request, &config)
+}
+
+/// Parses and checks a reply with a dialect.
+#[uniffi::export]
+pub fn parse_dialect(dialect: String, request: String, response: String) -> String {
+    letsdecide::json::parse_dialect(&dialect, &request, &response)
+}

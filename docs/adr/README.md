@@ -22,3 +22,4 @@ Format: copy [0000-template.md](0000-template.md).
 | [0012](0012-no-default-local-model.md) | No default local model | Accepted |
 | [0013](0013-engine-packaging.md) | Model runtimes ship in separate packages | Accepted |
 | [0014](0014-credentials-per-provider.md) | Credentials and endpoints are set per provider only | Accepted |
+| [0015](0015-dialects.md) | Dialects: providers as data, with named strategies | Accepted |
