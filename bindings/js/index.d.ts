@@ -74,6 +74,12 @@ export interface ClientOptions {
   fetch?: typeof fetch;
   /** WASM bytes or module, where the runtime can't `fetch` a file URL (e.g. Node). */
   wasm?: BufferSource | WebAssembly.Module;
+  /** Custom HTTP providers by name. */
+  providers?: Record<string, Codec>;
+  /** Custom engines by name. */
+  engines?: Record<string, Engine>;
+  /** Built-in names that `providers` or `engines` may override. */
+  replace?: string[];
 }
 
 export type ErrorCode =
@@ -113,6 +119,10 @@ export class LetsDecideError extends Error {
   retryAfterMs?: number;
   retryable: boolean;
   details?: ErrorDetails;
+  /** `ProviderError` only: the custom provider's name. */
+  provider?: string;
+  /** `ProviderError` only: what user code threw. Non-enumerable, so loggers don't print it. */
+  original?: unknown;
 }
 
 export function initialize(wasm?: BufferSource | WebAssembly.Module): Promise<unknown>;
@@ -123,3 +133,63 @@ export class Client {
   decide(model: string, request: DecisionRequest, options?: { signal?: AbortSignal }): Promise<DecisionResponse>;
 }
 export * from "./middleware";
+
+export type Capabilities = {
+  max_questions?: number | null;
+  max_options?: number | null;
+  max_levels?: number | null;
+  max_media?: number | null;
+  /** Accepted MIME types; `type/*` matches a kind. Empty or missing: no media. */
+  media?: string[];
+  /** `yesno`, `choice`, `score`. Empty or missing: all. */
+  question_kinds?: string[];
+  /** Allow Gemini-style ids `[A-Za-z0-9_-]{1,128}`. */
+  wide_ids?: boolean;
+  probabilities?: "provider" | "logprob" | "nli";
+  locality?: "cloud" | "network" | "device";
+};
+
+/** Config as a custom codec sees it. `accessToken` is already resolved. */
+export interface ProviderConfig {
+  apiKey?: string;
+  accessToken?: string;
+  baseUrl?: string;
+  accountId?: string;
+  headers: [string, string][];
+  options: Record<string, Json>;
+}
+
+export interface HttpRequestOut {
+  method?: string;
+  url: string;
+  headers?: Record<string, string> | [string, string][];
+  body?: string;
+}
+
+export interface HttpReply {
+  status: number;
+  headers: [string, string][];
+  body: string;
+}
+
+/** A custom HTTP provider. Keep `build` and `parse` pure; the client sends the request. */
+export interface Codec {
+  build(model: string, request: DecisionRequest, config: ProviderConfig): HttpRequestOut | Promise<HttpRequestOut>;
+  /** Throw `LetsDecideError` (e.g. from `classifyHttp`) for failures. */
+  parse(request: DecisionRequest, response: HttpReply): DecisionResponse | Promise<DecisionResponse>;
+  /** Checked before `build`. Missing: only the request itself is validated. */
+  capabilities?: Capabilities;
+}
+
+/** A custom provider that isn't one HTTP round trip: local models, mocks, rules. */
+export interface Engine {
+  decide(model: string, request: DecisionRequest, options: { signal?: AbortSignal }): Promise<DecisionResponse>;
+  capabilities?: Capabilities;
+}
+
+export const BUILTIN: readonly string[];
+export function validate(request: DecisionRequest, capabilities?: Capabilities | null, options?: { wasm?: BufferSource | WebAssembly.Module }): Promise<void>;
+export function check(request: DecisionRequest, response: unknown, options?: { wasm?: BufferSource | WebAssembly.Module }): Promise<DecisionResponse>;
+export function classifyHttp(response: { status: number; headers?: Record<string, string> | [string, string][]; body?: string }, options?: { wasm?: BufferSource | WebAssembly.Module }): Promise<LetsDecideError>;
+export function capabilities(model: string, options?: { wasm?: BufferSource | WebAssembly.Module }): Promise<Capabilities>;
+export function mockEngine(options?: { answers?: Record<string, Answer>; model?: string; probabilitySource?: "provider" | "logprob" | "nli" }): Engine;

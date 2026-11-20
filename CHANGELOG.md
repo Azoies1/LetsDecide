@@ -35,6 +35,15 @@ All notable changes to this project are documented here. The format follows
 - JSON entry points for custom providers: `validate`, `check`,
   `classify_http`, `capabilities` (Rust, WASM, Python).
 - `http_error` and `apply_headers` are public.
+- JS and Python clients take custom `providers` (codecs: `build` + `parse`)
+  and `engines` (`decide`), with `replace` to override a built-in name.
+  Exceptions from user code become `ProviderError`; the original is kept on
+  `.original`, out of loggers and tracebacks.
+- `mockEngine` / `mock_engine` for tests, and helpers `validate`, `check`,
+  `classifyHttp` / `classify_http`, `capabilities`, `BUILTIN`.
+- Conformance kit: `letsdecide/conformance` (`checkProvider`) and
+  `letsdecide.conformance` (`check_provider`), over the golden fixture format.
+- Guide: `docs/custom-providers.md`. Core `json::builtins()`.
 - Plan for custom providers and local models
   (`docs/plan-custom-and-local-providers.md`).
 

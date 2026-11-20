@@ -116,6 +116,11 @@ pub fn parse(model: &str, request: &str, response: &str) -> String {
     })
 }
 
+/// Names of the built-in providers. Bindings refuse these as custom names.
+pub fn builtins() -> String {
+    run(|| Ok(crate::BUILTIN))
+}
+
 /// Capabilities of a built-in `"provider/model"`.
 pub fn capabilities(model: &str) -> String {
     run(|| Registry::builtin().capabilities(model))
