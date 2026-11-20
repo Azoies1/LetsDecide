@@ -48,16 +48,15 @@ Plan and decisions: [plan-custom-and-local-providers.md](plan-custom-and-local-p
   engine; conformance kit over the golden fixture format; `ProviderError`
   wrapping of user exceptions; guide `docs/custom-providers.md`.
 - [x] **P3** Dialects for the System One and OpenAI families; built-ins are
-  dialects (`spec/dialects/`). Not yet: dialects in the Kotlin and Swift
-  clients (the UniFFI crate exports the entry points); verified example
-  dialects for Perplexity and Microsoft-Decision-1 once their docs are read.
+  dialects (`spec/dialects/`), in every client (Rust, JS, Python, Kotlin,
+  Swift). Not yet: verified example dialects for Perplexity and
+  Microsoft-Decision-1. Their docs (docs.perplexity.ai, learn.microsoft.com)
+  were not reachable from the build environment on 2026-11-20.
 - [ ] **P4** Local label scorer in the core; `letsdecide-serve` sidecar.
 - [ ] **P5** In-process engines (Python, JS); `escalate` and capability-aware
   `fallback` middleware (`shadow` already ships).
 - [ ] **P6** Engine slots in the Swift and Kotlin clients (the bindings
   themselves ship); reference engines for llama.cpp and ONNX NLI.
-  Also bring `headers`, `options` and error `details` to the Swift and
-  Kotlin clients (the UniFFI crate already exports the P1 entry points).
 - [ ] Support tiers in the README (Built-in, Community, Custom).
 
 ## Gemini Decisions: not exposed

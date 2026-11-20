@@ -22,7 +22,28 @@ try {
 }
 ```
 
-`decide` blocks; call it from a background thread or `Dispatchers.IO`. Pass
+`decide` blocks; call it from a background thread or `Dispatchers.IO`.
+
+Errors carry `details` (`ErrorDetails`: `reason`, `provider`, `question`, `id`,
+`limit`, `actual`, `mimeType`, `field`), safe to log: never keys or content.
+
+### Dialects
+
+Providers described as data ([docs/dialects.md](../../docs/dialects.md)).
+They are validated when the client is made.
+
+```kotlin
+val client = Client(
+    byProvider = mapOf("acme" to ProviderSettings(apiKey = "...", options = mapOf("region" to "eu"))),
+    dialects = mapOf("acme" to JSONObject("""{"extends": "jev", "base_url": "https://api.acme.ai",
+        "path": "/v1/{options.region}/decisions"}""")),
+    // replace = setOf("gemini") to override a built-in
+)
+client.decide("acme/acme-decide-1", request)
+```
+
+Top-level helpers: `dialect(name)`, `resolveDialect(spec)`, `capabilities(model)`,
+`validate(request, capabilities)`, `check(request, response)`, `classifyHttp(reply)`, `BUILTIN`. Pass
 your own `Transport` for proxies, pinning or tests. Android: build the library
 per ABI with `cargo ndk` and package it under `jniLibs`; untested so far.
 

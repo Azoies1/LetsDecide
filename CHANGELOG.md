@@ -13,6 +13,10 @@ All notable changes to this project are documented here. The format follows
   merged. See `docs/concurrent-models.md`.
 - Custom engines' extra response fields are now kept after the response check.
 - Kotlin and Swift bindings over UniFFI (`bindings/uniffi`, `bindings/kotlin`, `bindings/swift`).
+- Kotlin and Swift clients: `dialects` and `replace`, per-provider `options`,
+  typed error `details` (`ErrorDetails`), and the helpers `dialect`,
+  `resolveDialect`, `validate`, `check`, `classifyHttp`, `capabilities` and
+  `BUILTIN`, matching JS and Python.
 - Middleware (JS and async Python): `hedge`, `split`, `shadow` + `compare`,
   `calibrate` + `fitIsotonic` + `brierScore`, `observe`. Python also gets
   `retry` and `fallback`.

@@ -347,7 +347,7 @@ change, fixtures, no silent degradation).
 | **P3** ✅ | Dialects for `systemone` and `openai` families | Jev, Clef, Gemini presets re-expressed as dialects produce byte-identical fixtures |
 | **P4** | Local scorer in core (`score_plan`/`score_answers`), golden fixtures from recorded log-probs; `letsdecide-serve` sidecar over llama.cpp server and an OpenAI-compatible (vLLM) backend | `systemone/<local-model>` works from JS and Python against the sidecar; scorer fixtures cover all three question kinds and the label limit |
 | **P5** | In-process engines: Python (llama-cpp-python), JS (transformers.js); `escalate` and capability-aware `fallback` middleware (`shadow` already ships) | Scenario 16 (local, escalate to cloud) runs end-to-end in an example |
-| **P6** | Engine slots, `headers`/`options` and error `details` in the Swift and Kotlin clients (the UniFFI bindings already ship); reference engines for llama.cpp (iOS/Android) and ONNX NLI | Example iOS and Android apps answer a yes/no offline |
+| **P6** | Engine slots in the Swift and Kotlin clients (`headers`, `options`, error `details` and dialects already ship there); reference engines for llama.cpp (iOS/Android) and ONNX NLI | Example iOS and Android apps answer a yes/no offline |
 
 P1 is small and unblocks everything else. P4 delivers server/PC local support
 without any mobile work, so it can ship before P6.

@@ -66,4 +66,56 @@ final class ClientTests: XCTestCase {
         XCTAssertFalse(t.sent[1].headers.contains { $0.1 == "g" })
         XCTAssertTrue(t.sent.allSatisfy { h in h.headers.contains { $0 == ("x-trace", "t") } })
     }
+
+    let jevBody = #"{"answers": {"billing": {"noul": 0.9}}}"#
+
+    func testDialectsRouteByPrefixWithOptions() async throws {
+        let t = Recorder(200, jevBody)
+        let client = try Client(
+            byProvider: ["acme": ProviderSettings(apiKey: "k", options: ["region": "eu"])],
+            transport: t,
+            dialects: ["acme": [
+                "extends": "systemone", "base_url": "https://api.acme.ai",
+                "path": "/v1/{options.region}/decide", "auth": ["header": "api-key", "required": true],
+            ]])
+        let out = try await client.decide("acme/acme-1", request)
+        XCTAssertEqual(t.sent[0].url.absoluteString, "https://api.acme.ai/v1/eu/decide")
+        XCTAssertTrue(t.sent[0].headers.contains { $0 == ("api-key", "k") })
+        let billing = (out["answers"] as! [String: Any])["billing"] as! [String: Any]
+        XCTAssertEqual(billing["probability"] as! Double, 0.9, accuracy: 1e-6)
+        XCTAssertNotNil(try client.capabilities("acme/acme-1")["media"])
+    }
+
+    func testDialectErrorsNameTheProvider() async throws {
+        let client = try Client(
+            transport: Recorder(200, "{}"),
+            dialects: ["acme": ["extends": "systemone", "base_url": "https://api.acme.ai", "auth": ["required": true]]])
+        do {
+            _ = try await client.decide("acme/acme-1", request)
+            XCTFail("expected an error")
+        } catch let e as LetsDecideError {
+            XCTAssertEqual(e.details?.provider, "acme")
+            XCTAssertEqual(e.details?.reason, "missing_config")
+        }
+    }
+
+    func testBadDialectsAndBuiltinNames() throws {
+        XCTAssertThrowsError(try Client(dialects: ["acme": ["extends": "jev", "pathh": "/x"]])) { e in
+            XCTAssertEqual((e as? LetsDecideError)?.details?.provider, "acme")
+        }
+        XCTAssertThrowsError(try Client(dialects: ["gemini": ["extends": "gemini"]])) { e in
+            XCTAssertEqual((e as? LetsDecideError)?.details, ErrorDetails(reason: "name_taken", provider: "gemini"))
+        }
+        XCTAssertNoThrow(try Client(dialects: ["gemini": ["extends": "gemini"]], replace: ["gemini"]))
+    }
+
+    func testTopLevelHelpers() throws {
+        XCTAssertTrue(BUILTIN.contains("gemini"))
+        XCTAssertEqual(try dialect("jev")["family"] as? String, "systemone")
+        XCTAssertEqual(try resolveDialect(["extends": "jev"])["base_url"] as? String, "https://api.typesafe.ai")
+        XCTAssertNoThrow(try validate(request))
+        let e = try classifyHttp(HttpReply(status: 429, headers: [("Retry-After", "3")], body: Data("{}".utf8)))
+        XCTAssertEqual(e.code, "RateLimited")
+        XCTAssertEqual(e.retryAfterMs, 3000)
+    }
 }
