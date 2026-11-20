@@ -15,7 +15,7 @@
 //! `prompt_feedback.block_reason`, or HTTP 400 + `error.code`) applies when.
 //! Both are handled.
 
-use crate::dialect::{Dialect, InputField, JsonInput, MediaEncoding};
+use crate::dialect::{Dialect, InputField, MediaEncoding, JEV_IMAGE_HEADER};
 use crate::error::safe_serde_message;
 use crate::gemini;
 use crate::model::confidence;
@@ -38,9 +38,9 @@ fn attach_input<'a>(
         Value::String(_) => req.input.clone(),
         other => Value::String(other.to_string()),
     };
-    let mut value: Cow<'a, Value> = match d.json_input {
-        JsonInput::Value => Cow::Borrowed(&req.input),
-        JsonInput::Text => Cow::Owned(text()),
+    let mut value: Cow<'a, Value> = match d.input_field {
+        InputField::State => Cow::Borrowed(&req.input),
+        InputField::Input => Cow::Owned(text()),
     };
     match d.media_encoding {
         MediaEncoding::None | MediaEncoding::ContentParts => {}
@@ -167,7 +167,7 @@ pub(crate) fn build(
     req.require_portable(
         d.media_encoding == MediaEncoding::TypedBlocks,
         false,
-        d.yesno_descriptions,
+        d.capabilities.yesno_descriptions,
     )?;
     let questions =
         req.questions
@@ -217,8 +217,8 @@ pub(crate) fn build(
     let url = d.url(model, cfg)?;
     let mut headers = vec![("content-type".to_owned(), "application/json".to_owned())];
     headers.extend(d.credential(cfg)?);
-    if !req.media.is_empty() {
-        headers.extend(d.media_headers.iter().cloned());
+    if !req.media.is_empty() && d.media_encoding == MediaEncoding::JevAssets {
+        headers.push((JEV_IMAGE_HEADER.0.into(), JEV_IMAGE_HEADER.1.into()));
     }
     let mut http = HttpRequest {
         method: "POST",

@@ -139,8 +139,9 @@ pub fn resolve_dialect(dialect: &str) -> String {
     run(|| Dialect::from_json(dialect))
 }
 
+/// `build_dialect` / `parse_dialect` take the output of `resolve_dialect`.
 fn dialect_in(dialect: &str) -> Result<Dialect, Error> {
-    Dialect::from_json(dialect)
+    Dialect::from_resolved(dialect)
 }
 
 /// As [`build`], with a dialect instead of a built-in. `model` is the model

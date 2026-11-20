@@ -3,13 +3,16 @@
   "family": "systemone",
   "base_url": "https://api.typesafe.ai",
   "path": "/v1/systemone",
-  "auth": { "header": "authorization", "scheme": "bearer" },
+  "auth": {
+    "required": false
+  },
   "input_field": "state",
-  "json_input": "value",
   "media_encoding": "jev_assets",
-  "media_headers": [["typesafe-danger-zone-images", "true"]],
   "capabilities": {
     "max_levels": 10,
-    "media": ["image/png", "image/jpeg"]
+    "media": [
+      "image/png",
+      "image/jpeg"
+    ]
   }
 }

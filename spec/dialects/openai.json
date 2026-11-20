@@ -3,11 +3,15 @@
   "family": "openai",
   "base_url": "https://api.openai.com",
   "path": "/v1/decisions",
-  "auth": { "header": "authorization", "scheme": "bearer" },
+  "auth": {
+    "required": false
+  },
   "media_encoding": "content_parts",
   "capabilities": {
     "max_questions": 400,
     "max_levels": 10,
-    "media": ["image/*"]
+    "media": [
+      "image/*"
+    ]
   }
 }

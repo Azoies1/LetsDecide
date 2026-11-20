@@ -23,9 +23,10 @@ function unwrap(json) {
 }
 
 let ready;
+let loaded = false;
 /** Loads the WASM once. Pass bytes or a module where `fetch(url)` isn't available (e.g. Node). */
 export function initialize(wasm) {
-  return (ready ??= init({ module_or_path: wasm }));
+  return (ready ??= init({ module_or_path: wasm }).then((m) => ((loaded = true), m)));
 }
 
 /** Built-in provider names; custom providers can't take them without `replace`. */
@@ -161,7 +162,15 @@ export class Client {
     this.fetch = fetch;
     this.wasm = wasm;
     this.custom = new Map();
-    const fromDialects = Object.fromEntries(Object.entries(dialects).map(([n, spec]) => [n, dialectCodec(spec)]));
+    const fromDialects = Object.fromEntries(
+      Object.entries(dialects).map(([n, spec]) => {
+        try {
+          return [n, dialectCodec(spec)];
+        } catch (e) {
+          throw fromUserCode(n, e);
+        }
+      }),
+    );
     for (const [kind, table] of [["codec", providers], ["engine", engines], ["codec", fromDialects]]) {
       for (const [name, impl] of Object.entries(table)) {
         if (!NAME.test(name)) {
@@ -293,12 +302,13 @@ const coreConfig = (c) => ({
 });
 
 /**
- * A dialect run by the core, as a codec. Resolved (and validated) once, on first use,
- * because the WASM core loads asynchronously; call `resolveDialect` to check one up front.
+ * A dialect run by the core, as a codec. Validated when the client is made if the core is
+ * already loaded (`await initialize()` first), otherwise on first use.
  */
 function dialectCodec(spec) {
   let resolved;
   const get = () => (resolved ??= JSON.stringify(unwrap(core.resolve_dialect(JSON.stringify(spec)))));
+  if (loaded) get();
   return {
     get capabilities() {
       return JSON.parse(get()).capabilities;

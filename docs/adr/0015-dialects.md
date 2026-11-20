@@ -14,16 +14,23 @@ codes, id rules and limits. Users need to add such providers without code,
 and to patch a built-in when a vendor changes its API, without a release.
 
 ## Decision
-A `Dialect` is JSON: a `family`, plain settings (endpoint with the fixed
-placeholders `{model}` and `{account_id}`, auth, input field, envelope key,
-block codes, flags, capabilities), and **named strategies** for the parts that
-are real logic: `media_encoding` (`none`, `jev_assets`, `data_url_list`,
-`typed_blocks`, `content_parts`). Every built-in is a dialect in
-`spec/dialects/*.json`; the golden fixtures are unchanged, proving the
-format covers them byte for byte. `extends` starts from a built-in (objects
-merge, arrays replace). Unknown fields are errors. Dialects register like any
-provider: Rust `Registry`, JS and Python `dialects`, with `replace` to
-override a built-in.
+A `Dialect` is JSON that `extends` a built-in and overrides what differs:
+endpoint (`base_url`, `path` with the placeholders `{model}`, `{account_id}`
+and `{options.<name>}`), `auth` (header; the scheme is inferred from it),
+`input_field`, `envelope`, `blocked_error_codes` and `capabilities`, plus a
+**named strategy** for the part that is real logic: `media_encoding`
+(`none`, `jev_assets`, `data_url_list`, `typed_blocks`, `content_parts`).
+`extends` is required and fixes the wire family. Every built-in is a dialect
+in `spec/dialects/*.json`; the golden fixtures are unchanged, proving the
+format covers them byte for byte. Objects merge, arrays replace. Unknown
+fields are errors. Dialects register like any provider: Rust `Registry`, JS
+and Python `dialects`, with `replace` to override a built-in.
+
+A first draft had thirteen fields. It was cut to the ones a real provider
+needs: `family` comes from `extends`; JSON-as-text is implied by
+`input_field: input` (only Gemini uses either); Jev's image header is part of
+`jev_assets`; the auth scheme is inferred; `yesno_descriptions` is a
+capability. A field returns only when a second provider needs it.
 
 We rejected a general template language (JSONPath, body templates, response
 mappings): question mapping needs loops and branches by kind, probabilities

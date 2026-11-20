@@ -60,9 +60,12 @@ All notable changes to this project are documented here. The format follows
   (`docs/plan-custom-and-local-providers.md`).
 
 - **Dialects**: providers described as data (`Dialect`; JS/Python
-  `dialects`), for APIs that are System One or OpenAI variants. `extends` a
-  built-in and override fields, e.g. to patch a vendor's API change without a
-  release (`replace` for built-in names). Every built-in is now a dialect in
+  `dialects`), for APIs that are System One or OpenAI variants. A dialect
+  `extends` a built-in and overrides what differs (endpoint with `{model}`,
+  `{account_id}` and `{options.<name>}` placeholders, auth header with the
+  scheme inferred, input field, media encoding, envelope, block codes,
+  capabilities), e.g. to patch a vendor's API change without a release
+  (`replace` for built-in names). Every built-in is now a dialect in
   `spec/dialects/*.json`; fixtures unchanged. Helpers: `dialect(name)`,
   `resolveDialect` / `resolve_dialect`; core `json::dialect`,
   `resolve_dialect`, `build_dialect`, `parse_dialect` (ADR 0015,

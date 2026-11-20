@@ -59,9 +59,25 @@ test("a bad dialect fails with the field named; built-in names need replace", as
     assert.match(e.message, /unknown field `pathh`/);
     return true;
   });
-  const client = new Client({}, { fetch: async () => {}, wasm, dialects: { bad: { extends: "nope" } } });
-  await assert.rejects(client.decide("bad/m", request), (e) => e.details.reason === "invalid_config" && e.details.provider === "bad");
+  // The core is loaded (initialize above), so a bad dialect fails when the client is made.
+  assert.throws(
+    () => new Client({}, { fetch: async () => {}, wasm, dialects: { bad: { extends: "nope" } } }),
+    (e) => e.details.reason === "invalid_config" && e.details.provider === "bad",
+  );
+  assert.throws(() => new Client({}, { wasm, dialects: { acme: { base_url: "https://h", path: "/x" } } }), (e) => e.details.field === "extends");
   assert.throws(() => new Client({}, { wasm, dialects: { jev: { extends: "jev" } } }), (e) => e.details.reason === "name_taken");
+});
+
+test("auth scheme is inferred and {options.*} fills the path", async () => {
+  const { sent, fetch } = recorder(200, { answers: { q: { noul: 0.5 } } });
+  const client = new Client(
+    { byProvider: { acme: { apiKey: "k", options: { region: "eu" } } } },
+    { fetch, wasm, dialects: { acme: { extends: "systemone", base_url: "https://h.test", path: "/{options.region}/decide", auth: { header: "x-api-key" } } } },
+  );
+  await client.decide("acme/m", request);
+  assert.equal(sent[0].url, "https://h.test/eu/decide");
+  assert.equal(sent[0].headers["x-api-key"], "k");
+  assert.equal(sent[0].headers.authorization, undefined);
 });
 
 test("built-in dialects can be read and extended", async () => {

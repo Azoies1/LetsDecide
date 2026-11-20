@@ -305,7 +305,8 @@ fn config_headers_reject_injection() {
         json!([["x-a", "ok\r\nx-evil: 1"]]),
         json!([["bad name", "v"]]),
     ] {
-        let cfg: Config = serde_json::from_value(json!({ "headers": headers })).unwrap();
+        let cfg: Config =
+            serde_json::from_value(json!({ "api_key": "k", "headers": headers })).unwrap();
         let (p, m) = resolve("openai/gpt-6-luna").unwrap();
         let e = p.build(m, &yesno(), &cfg).unwrap_err();
         assert_eq!(e.code, ErrorCode::InvalidRequest);

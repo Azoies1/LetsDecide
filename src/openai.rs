@@ -157,9 +157,6 @@ pub(crate) fn build(
     )?;
     let mut headers = vec![("content-type".to_owned(), "application/json".to_owned())];
     headers.extend(d.credential(cfg)?);
-    if !req.media.is_empty() {
-        headers.extend(d.media_headers.iter().cloned());
-    }
     let mut http = HttpRequest {
         method: "POST",
         url: d.url(model, cfg)?,

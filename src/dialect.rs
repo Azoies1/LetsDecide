@@ -18,7 +18,7 @@ use crate::{
     HttpRequest, HttpResponse, Provider,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::Value;
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
@@ -32,11 +32,10 @@ pub enum Family {
     Openai,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AuthScheme {
     /// `Bearer <access_token or api_key>`.
-    #[default]
     Bearer,
     /// The `api_key` as-is.
     Raw,
@@ -45,22 +44,45 @@ pub enum AuthScheme {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Auth {
-    /// Header the credential goes in, e.g. `authorization`, `x-goog-api-key`.
+    /// Header the credential goes in, e.g. `authorization`, `x-api-key`.
+    #[serde(default = "authorization")]
     pub header: String,
-    #[serde(default)]
-    pub scheme: AuthScheme,
+    /// Inferred when unset: `bearer` for `authorization`, else `raw`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scheme: Option<AuthScheme>,
     /// Fail before sending when no credential is set, instead of a late 401.
-    #[serde(default)]
+    #[serde(default = "yes")]
     pub required: bool,
+}
+
+fn authorization() -> String {
+    "authorization".into()
+}
+
+fn yes() -> bool {
+    true
 }
 
 impl Default for Auth {
     fn default() -> Self {
         Self {
-            header: "authorization".into(),
-            scheme: AuthScheme::Bearer,
-            required: false,
+            header: authorization(),
+            scheme: None,
+            required: true,
         }
+    }
+}
+
+impl Auth {
+    /// The explicit scheme, else `bearer` for `authorization` and `raw` for
+    /// any other header (`x-api-key`, `api-key`, `x-goog-api-key`, ...).
+    pub fn scheme(&self) -> AuthScheme {
+        self.scheme
+            .unwrap_or(if self.header.eq_ignore_ascii_case("authorization") {
+                AuthScheme::Bearer
+            } else {
+                AuthScheme::Raw
+            })
     }
 }
 
@@ -68,22 +90,11 @@ impl Default for Auth {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum InputField {
-    /// `state` (Jev, Clef).
+    /// `state`, JSON input as-is (Jev, Clef).
     #[default]
     State,
-    /// `input` (Gemini).
+    /// `input`, JSON input serialised to text (Gemini).
     Input,
-}
-
-/// How JSON input is sent.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum JsonInput {
-    /// As a JSON value.
-    #[default]
-    Value,
-    /// Serialised to a string.
-    Text,
 }
 
 /// How media is attached. Each is tested code in the core.
@@ -93,7 +104,8 @@ pub enum MediaEncoding {
     /// No media.
     #[default]
     None,
-    /// Jev: `assets` map, placeholders appended to the input.
+    /// Jev: `assets` map, placeholders appended to the input, and Jev's
+    /// image gate header.
     JevAssets,
     /// Clef: `images` array of data URLs.
     DataUrlList,
@@ -105,6 +117,9 @@ pub enum MediaEncoding {
 }
 
 /// A provider described as data. See the module docs.
+///
+/// Users write `extends` plus the fields that differ; `family` comes from
+/// the built-in they extend.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Dialect {
@@ -113,21 +128,16 @@ pub struct Dialect {
     /// must set `base_url`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub base_url: Option<String>,
-    /// Path after the base URL. Placeholders: `{model}`, `{account_id}`.
+    /// Path after the base URL. Placeholders: `{model}`, `{account_id}`,
+    /// `{options.<name>}`.
     pub path: String,
     #[serde(default)]
     pub auth: Auth,
     /// System One only.
     #[serde(default)]
     pub input_field: InputField,
-    /// System One only.
-    #[serde(default)]
-    pub json_input: JsonInput,
     #[serde(default)]
     pub media_encoding: MediaEncoding,
-    /// Extra headers sent only when the request has media (Jev's image gate).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub media_headers: Vec<(String, String)>,
     /// Replies wrapped in an object under this key (Clef: `result`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub envelope: Option<String>,
@@ -135,12 +145,12 @@ pub struct Dialect {
     /// becomes `Refused` instead of an error (Gemini).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub blocked_error_codes: Vec<String>,
-    /// Yes/no questions may carry `yes_description` / `no_description`.
-    #[serde(default)]
-    pub yesno_descriptions: bool,
     #[serde(default)]
     pub capabilities: Capabilities,
 }
+
+/// Jev gates image requests behind this header (part of `jev_assets`).
+pub(crate) const JEV_IMAGE_HEADER: (&str, &str) = ("typesafe-danger-zone-images", "true");
 
 const BUILTIN_SOURCES: [(&str, &str); 5] = [
     ("jev", include_str!("../spec/dialects/jev.json")),
@@ -213,15 +223,22 @@ impl Dialect {
         builtins().get(name).cloned()
     }
 
-    /// Parses and validates a dialect. `{"extends": "<built-in>", ...}`
+    /// Parses and validates a dialect: `{"extends": "<built-in>", ...}`
     /// starts from that built-in and merges the rest over it (objects key by
-    /// key, arrays replaced). Unknown fields are an error, so typos fail.
+    /// key, arrays replaced). `extends` is required (`systemone` or `openai`
+    /// for a fresh one) and `family` comes from it. Unknown fields are an
+    /// error, so typos fail.
     pub fn from_value(v: Value) -> Result<Self, Error> {
         let Value::Object(mut obj) = strip_comments(v) else {
             return Err(invalid("a dialect is a JSON object", "dialect"));
         };
         let mut base = match obj.remove("extends") {
-            None => Value::Object(Map::new()),
+            None => {
+                return Err(invalid(
+                    "a dialect `extends` a built-in: jev, clef, gemini, openai or systemone",
+                    "extends",
+                ))
+            }
             Some(Value::String(name)) => {
                 builtins().get(name.as_str()).cloned().ok_or_else(|| {
                     invalid(
@@ -232,8 +249,25 @@ impl Dialect {
             }
             Some(_) => return Err(invalid("`extends` must be a built-in name", "extends")),
         };
+        // `family` comes from the base; restating it is fine, changing it isn't.
+        if let Some(f) = obj.get("family") {
+            if Some(f) != base.get("family") {
+                return Err(invalid(
+                    "`family` comes from `extends`; extend `systemone` or `openai`",
+                    "family",
+                ));
+            }
+        }
         merge(&mut base, Value::Object(obj));
         let d: Dialect = serde_json::from_value(base)
+            .map_err(|e| invalid(crate::error::safe_dialect_message(&e), "dialect"))?;
+        d.validate()?;
+        Ok(d)
+    }
+
+    /// A full dialect as `resolve_dialect` returns it (no `extends`).
+    pub(crate) fn from_resolved(json: &str) -> Result<Self, Error> {
+        let d: Dialect = serde_json::from_str(json)
             .map_err(|e| invalid(crate::error::safe_dialect_message(&e), "dialect"))?;
         d.validate()?;
         Ok(d)
@@ -258,9 +292,14 @@ impl Dialect {
                 .find('}')
                 .ok_or_else(|| invalid("`path` has an unclosed `{`", "path"))?;
             let name = &rest[i + 1..i + end];
-            if !matches!(name, "model" | "account_id") {
+            let option_ok = name.strip_prefix("options.").is_some_and(|o| {
+                !o.is_empty()
+                    && o.bytes()
+                        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+            });
+            if !(matches!(name, "model" | "account_id") || option_ok) {
                 return Err(invalid(
-                    "`path` placeholders are `{model}` and `{account_id}`",
+                    "`path` placeholders are `{model}`, `{account_id}` and `{options.<name>}`",
                     "path",
                 ));
             }
@@ -271,14 +310,6 @@ impl Dialect {
         }
         if !is_token(&self.auth.header) {
             return Err(invalid("`auth.header` is not a valid header name", "auth"));
-        }
-        for (k, v) in &self.media_headers {
-            if !is_token(k) || v.bytes().any(|b| b == b'\r' || b == b'\n' || b == 0) {
-                return Err(invalid(
-                    "a `media_headers` entry is not valid",
-                    "media_headers",
-                ));
-            }
         }
         let ok_media = match self.family {
             Family::Openai => matches!(
@@ -330,12 +361,24 @@ impl Dialect {
                 .ok_or_else(|| missing("account_id"))?;
             path = path.replace("{account_id}", path_segment(id, "account_id")?);
         }
+        while let Some(i) = path.find("{options.") {
+            let end = i + path[i..].find('}').expect("validated");
+            let name = path[i + "{options.".len()..end].to_owned();
+            let field = format!("options.{name}");
+            let value = match cfg.options.get(&name) {
+                Some(Value::String(v)) => v.clone(),
+                Some(Value::Number(n)) => n.to_string(),
+                Some(_) => return Err(invalid(format!("`{field}` must be a string"), &field)),
+                None => return Err(missing(&field)),
+            };
+            path.replace_range(i..=end, path_segment(&value, &field)?);
+        }
         Ok(format!("{}{path}", base.trim_end_matches('/')))
     }
 
     /// The credential header, or an error when one is required and missing.
     pub(crate) fn credential(&self, cfg: &Config) -> Result<Option<(String, String)>, Error> {
-        let value = match self.auth.scheme {
+        let value = match self.auth.scheme() {
             AuthScheme::Bearer => cfg
                 .access_token
                 .as_ref()
@@ -346,7 +389,7 @@ impl Dialect {
         match value {
             Some(v) => Ok(Some((self.auth.header.clone(), v))),
             None if self.auth.required => {
-                let what = match self.auth.scheme {
+                let what = match self.auth.scheme() {
                     AuthScheme::Bearer => "api_key or access_token",
                     AuthScheme::Raw => "api_key",
                 };

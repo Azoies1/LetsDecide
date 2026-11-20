@@ -38,8 +38,14 @@ fn every_builtin_is_a_valid_dialect() {
         d.validate().unwrap();
         let v = Dialect::builtin_json(name).unwrap();
         assert!(v.get("_doc").is_none(), "{name}: comments are stripped");
-        // Round-trips through its own JSON.
-        assert_eq!(Dialect::from_value(v).unwrap(), d, "{name}");
+        // Extending it with nothing changes nothing; restating its family is fine.
+        assert_eq!(
+            Dialect::from_value(json!({ "extends": name })).unwrap(),
+            d,
+            "{name}"
+        );
+        let same = json!({ "extends": name, "family": v["family"].clone() });
+        assert_eq!(Dialect::from_value(same).unwrap(), d, "{name}");
     }
     assert!(Dialect::builtin("nope").is_none());
 }
@@ -70,7 +76,7 @@ fn extends_merges_objects_and_keeps_the_rest() {
     let d = Dialect::from_value(json!({
         "extends": "systemone",
         "base_url": "https://foundry.test/providers/microsoft",
-        "auth": { "header": "api-key", "scheme": "raw" },
+        "auth": { "header": "api-key" },
         "capabilities": { "max_questions": 20 }
     }))
     .unwrap();
@@ -93,7 +99,7 @@ fn an_openai_compatible_endpoint_is_a_dialect() {
     let d = Dialect::from_value(json!({
         "extends": "openai",
         "base_url": "https://my-resource.openai.azure.test/openai",
-        "auth": { "header": "api-key", "scheme": "raw", "required": true }
+        "auth": { "header": "api-key", "required": true }
     }))
     .unwrap();
     let http = d
@@ -187,9 +193,9 @@ fn typos_and_bad_combinations_fail_at_registration() {
         msg(json!({ "extends": "jev", "auth": { "header": "a", "scheme": "bearr" } }))
             .contains("unknown variant `bearr`")
     );
-    assert!(
-        msg(json!({ "base_url": "https://h", "path": "/x" })).contains("missing field `family`")
-    );
+    assert!(msg(json!({ "base_url": "https://h", "path": "/x" })).contains("`extends`"));
+    assert!(msg(json!({ "extends": "jev", "family": "openai" }))
+        .contains("`family` comes from `extends`"));
 
     for v in [
         json!({ "extends": "nope" }),
@@ -198,7 +204,9 @@ fn typos_and_bad_combinations_fail_at_registration() {
         json!({ "extends": "jev", "path": "/v1/{model" }),
         json!({ "extends": "jev", "base_url": "ftp://h" }),
         json!({ "extends": "jev", "auth": { "header": "bad header" } }),
-        json!({ "extends": "jev", "media_headers": [["x", "a\r\nb"]] }),
+        json!({ "extends": "jev", "media_headers": [["x", "y"]] }),
+        json!({ "extends": "jev", "json_input": "text" }),
+        json!({ "extends": "jev", "path": "/{options.Region}" }),
         json!({ "extends": "openai", "media_encoding": "jev_assets" }),
         json!({ "extends": "jev", "media_encoding": "content_parts" }),
         json!({ "extends": "systemone", "capabilities": { "media": ["image/png"] } }),
@@ -325,4 +333,59 @@ fn documented_examples_resolve() {
         n += 1;
     }
     assert_eq!(n, 3);
+}
+
+#[test]
+fn auth_scheme_is_inferred_and_required_is_inherited() {
+    let from = |base: &str, auth: Value| {
+        Dialect::from_value(json!({ "extends": base, "base_url": "https://h.test", "auth": auth }))
+            .unwrap()
+    };
+    let c = cfg(json!({ "api_key": "k" }));
+    let auth = |d: &Dialect, h: &str| {
+        let http = d.build("m", &yesno(), &c).unwrap();
+        header(&http, h).map(str::to_owned)
+    };
+    // Scheme inferred from the header name.
+    let bearer = from("systemone", json!({}));
+    let raw = from("systemone", json!({ "header": "x-api-key" }));
+    assert_eq!(auth(&bearer, "authorization").as_deref(), Some("Bearer k"));
+    assert_eq!(auth(&raw, "x-api-key").as_deref(), Some("k"));
+    // An explicit scheme still wins.
+    let forced = from(
+        "systemone",
+        json!({ "header": "x-token", "scheme": "bearer" }),
+    );
+    assert_eq!(auth(&forced, "x-token").as_deref(), Some("Bearer k"));
+    // `required` comes from the base (objects merge) unless set.
+    assert!(raw.build("m", &yesno(), &Config::default()).is_ok());
+    let strict = from(
+        "systemone",
+        json!({ "header": "x-api-key", "required": true }),
+    );
+    let e = strict.build("m", &yesno(), &Config::default()).unwrap_err();
+    assert_eq!(reason(&e), Reason::MissingConfig);
+    let gemini_like = from("gemini", json!({ "header": "x-api-key" }));
+    assert!(gemini_like
+        .build("m", &yesno(), &Config::default())
+        .is_err());
+    // A dialect's own `Auth` with nothing set requires a key.
+    assert!(Auth::default().required);
+}
+
+#[test]
+fn options_placeholders_fill_the_path() {
+    let d = Dialect::from_value(json!({
+        "extends": "systemone",
+        "base_url": "https://api.acme.test",
+        "path": "/{options.region}/v1/{model}"
+    }))
+    .unwrap();
+    let with = |region: &str| cfg(json!({ "options": { "region": region } }));
+    let http = d.build("m1", &yesno(), &with("eu-west")).unwrap();
+    assert_eq!(http.url, "https://api.acme.test/eu-west/v1/m1");
+    for c in [Config::default(), with("../x")] {
+        let e = d.build("m1", &yesno(), &c).unwrap_err();
+        assert_eq!(e.details.unwrap().field.as_deref(), Some("options.region"));
+    }
 }

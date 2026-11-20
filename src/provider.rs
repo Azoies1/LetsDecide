@@ -132,7 +132,7 @@ pub fn resolve(model_ref: &str) -> Result<(Box<dyn Provider>, &str), Error> {
 /// // A custom provider is any `Provider`; here a System One preset stands in.
 /// // A dialect: Jev's shape at another path, with a different key header.
 /// let acme = Dialect::from_json(r#"{ "extends": "jev", "base_url": "https://api.acme.test",
-///     "path": "/v2/decide", "auth": { "header": "x-api-key", "scheme": "raw" } }"#).unwrap();
+///     "path": "/v2/decide", "auth": { "header": "x-api-key" } }"#).unwrap();
 /// providers.register("acme", acme.clone()).unwrap();
 /// assert!(providers.register("openai", acme).is_err()); // taken
 /// ```

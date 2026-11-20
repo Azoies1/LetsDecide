@@ -68,28 +68,31 @@ Python: `dialect("gemini")`, `resolve_dialect({...})`. Rust:
 
 ## Format
 
-| Field | Values | Default | Meaning |
-|---|---|---|---|
-| `extends` | `jev`, `clef`, `gemini`, `openai`, `systemone` | none | Start from this built-in. Objects merge key by key; arrays and values replace |
-| `family` | `systemone`, `openai` | required | Question and answer shape: `questions` map with `noul`/`choice`/`score`, or ordered array with `predicate`/`choice`/`score` |
-| `base_url` | `https://...` or `http://...` | none | Default endpoint. A provider's `baseUrl` setting overrides it. None means the caller must set one |
-| `path` | `/...` | required | Placeholders: `{model}`, `{account_id}`. Values must be one path segment (no `/`, `?`, `#`, `%`, `..`) |
-| `auth.header` | header name | `authorization` | Where the credential goes |
-| `auth.scheme` | `bearer`, `raw` | `bearer` | `Bearer <access_token or api_key>`, or the `api_key` as-is |
-| `auth.required` | bool | `false` | Fail before sending when no credential is set |
-| `input_field` | `state`, `input` | `state` | System One only: where the input goes |
-| `json_input` | `value`, `text` | `value` | JSON input as a JSON value, or serialised to a string |
-| `media_encoding` | see below | `none` | How media is attached |
-| `media_headers` | `[[name, value], ...]` | `[]` | Sent only when the request has media (Jev's image gate) |
-| `envelope` | key | none | Replies wrapped in an object under this key (Clef: `result`) |
-| `blocked_error_codes` | `[code, ...]` | `[]` | HTTP 400 `error.code` values that mean "input blocked": every answer becomes `refused` with `block_reason` |
-| `yesno_descriptions` | bool | `false` | Yes/no questions may carry `yes_description` / `no_description` |
-| `capabilities` | object | no limits, no media | `max_questions`, `max_options`, `max_levels`, `max_media`, `media` (MIME types, `type/*`), `question_kinds`, `wide_ids`, `probabilities`, `locality` |
+Every field except `extends` is optional: it defaults to the value in the
+built-in you extend. Most dialects set two or three fields.
+
+| Field | Values | Meaning |
+|---|---|---|
+| `extends` | `jev`, `clef`, `gemini`, `openai`, `systemone` | **Required.** The built-in to start from; it also fixes the wire family (System One for all but `openai`). Objects merge key by key; arrays and values replace. Use `systemone` or `openai` for a fresh one |
+| `base_url` | `https://...` or `http://...` | Default endpoint. A provider's `baseUrl` setting overrides it |
+| `path` | `/...` | Placeholders: `{model}`, `{account_id}`, `{options.<name>}` (from that provider's `options`). Values must be one path segment (no `/`, `?`, `#`, `%`, `..`) |
+| `auth.header` | header name | Where the credential goes. The scheme is inferred: `authorization` gets `Bearer <token or key>`, any other header (`x-api-key`, `api-key`) gets the raw `api_key` |
+| `auth.scheme` | `bearer`, `raw` | Only to override the inferred scheme |
+| `auth.required` | bool | Fail before sending when no credential is set. Inherited: `false` for `jev`, `openai` and `systemone`, `true` for `clef` and `gemini` |
+| `input_field` | `state`, `input` | System One only. `state`: JSON input as-is (Jev, Clef). `input`: JSON input as text (Gemini) |
+| `media_encoding` | see below | How media is attached |
+| `envelope` | key | Replies wrapped in an object under this key (Clef: `result`) |
+| `blocked_error_codes` | `[code, ...]` | HTTP 400 `error.code` values that mean "input blocked": every answer becomes `refused` with `block_reason` |
+| `capabilities` | object | `max_questions`, `max_options`, `max_levels`, `max_media`, `media` (MIME types, `type/*`), `question_kinds`, `wide_ids`, `yesno_descriptions`, `probabilities`, `locality` |
+
+Field names are snake_case in every language, JS included: a dialect is a
+portable JSON document, the same file in Rust, Python and JS.
 
 Keys starting with `_` are comments (`_doc`). Unknown keys are an error, so a
 typo such as `pathh` fails with `unknown field \`pathh\`` when the dialect is
-registered (Python, Rust) or first used (JS, whose core loads asynchronously;
-call `resolveDialect` to check up front).
+registered. In JS that needs the core loaded: `await initialize()` before
+creating the client, or the check happens on first use. `resolveDialect`
+checks one up front.
 
 ### Media encodings
 
@@ -98,7 +101,7 @@ Each is tested code in the core; a dialect picks one by name.
 | Name | Used by | What it sends |
 |---|---|---|
 | `none` | custom System One servers | no media |
-| `jev_assets` | Jev | an `assets` map plus placeholders appended to the input; `format` from the MIME subtype |
+| `jev_assets` | Jev | an `assets` map plus placeholders appended to the input; `format` from the MIME subtype; Jev's image gate header |
 | `data_url_list` | Clef | an `images` array of `data:` URLs |
 | `typed_blocks` | Gemini | the input as typed blocks (`text`, `image`, `audio`, `video`, `document`), inline or by URI, with per-media options |
 | `content_parts` | OpenAI | `input_image` content parts (data URLs or public image URLs) |
@@ -113,16 +116,16 @@ verified against official docs.** Check before relying on them.
 ```jsonc
 // A System One copy at another path, e.g. Perplexity Decisions (reported: POST /v1/decisions, Bearer)
 { "extends": "jev", "base_url": "https://api.perplexity.ai", "path": "/v1/decisions",
-  "media_encoding": "none", "media_headers": [], "capabilities": { "media": [] } }
+  "media_encoding": "none", "capabilities": { "media": [] } }
 
 // System One behind a different key header, e.g. Microsoft-Decision-1 on Foundry
 // (reported: {endpoint}/providers/microsoft/v1/systemone, `api-key` header)
 { "extends": "systemone", "base_url": "https://YOUR-RESOURCE.services.ai.azure.com/providers/microsoft",
-  "auth": { "header": "api-key", "scheme": "raw", "required": true } }
+  "auth": { "header": "api-key", "required": true } }
 
 // An OpenAI-compatible endpoint, e.g. Azure OpenAI Decisions
 { "extends": "openai", "base_url": "https://YOUR-RESOURCE.openai.azure.com/openai",
-  "auth": { "header": "api-key", "scheme": "raw", "required": true } }
+  "auth": { "header": "api-key", "required": true } }
 ```
 
 ## Security

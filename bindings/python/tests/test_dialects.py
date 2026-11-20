@@ -81,3 +81,29 @@ def test_builtin_dialects_can_be_read_and_extended():
     assert dialect("gemini")["auth"]["header"] == "x-goog-api-key"
     full = resolve_dialect({"extends": "openai", "base_url": "https://az.test/openai"})
     assert full["path"] == "/v1/decisions"
+
+
+def test_auth_scheme_is_inferred_and_options_fill_the_path():
+    sent, http = recorder(200, {"answers": {"q": {"noul": 0.5}}})
+    c = Client(
+        client=http,
+        by_provider={"acme": {"api_key": "k", "options": {"region": "eu"}}},
+        dialects={
+            "acme": {
+                "extends": "systemone",
+                "base_url": "https://h.test",
+                "path": "/{options.region}/decide",
+                "auth": {"header": "x-api-key"},
+            }
+        },
+    )
+    c.decide("acme/m", REQUEST)
+    assert sent[0]["url"] == "https://h.test/eu/decide"
+    assert sent[0]["headers"]["x-api-key"] == "k"
+    assert "authorization" not in sent[0]["headers"]
+
+
+def test_extends_is_required():
+    with pytest.raises(LetsDecideError) as e:
+        resolve_dialect({"base_url": "https://h", "path": "/x"})
+    assert e.value.details["field"] == "extends"

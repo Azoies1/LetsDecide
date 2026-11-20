@@ -3,20 +3,34 @@
   "family": "systemone",
   "base_url": "https://generativelanguage.googleapis.com",
   "path": "/v1beta/decisions",
-  "auth": { "header": "x-goog-api-key", "scheme": "raw", "required": true },
+  "auth": {
+    "header": "x-goog-api-key"
+  },
   "input_field": "input",
-  "json_input": "text",
   "media_encoding": "typed_blocks",
-  "blocked_error_codes": ["safety", "prohibited_content", "blocklist", "image_safety", "content_blocked"],
-  "yesno_descriptions": true,
+  "blocked_error_codes": [
+    "safety",
+    "prohibited_content",
+    "blocklist",
+    "image_safety",
+    "content_blocked"
+  ],
   "capabilities": {
     "max_questions": 1000,
     "max_options": 255,
     "max_levels": 255,
     "wide_ids": true,
     "media": [
-      "image/png", "image/jpeg", "image/webp", "image/heic", "image/heif", "image/gif", "image/bmp", "image/tiff",
-      "audio/*", "video/*",
+      "image/png",
+      "image/jpeg",
+      "image/webp",
+      "image/heic",
+      "image/heif",
+      "image/gif",
+      "image/bmp",
+      "image/tiff",
+      "audio/*",
+      "video/*",
       "application/pdf",
       "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       "application/vnd.openxmlformats-officedocument.presentationml.presentation",
@@ -29,6 +43,7 @@
       "application/vnd.oasis.opendocument.spreadsheet",
       "application/vnd.ms-excel",
       "text/csv"
-    ]
+    ],
+    "yesno_descriptions": true
   }
 }

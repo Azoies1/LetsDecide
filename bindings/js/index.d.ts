@@ -163,6 +163,8 @@ export type Capabilities = {
   question_kinds?: string[];
   /** Allow Gemini-style ids `[A-Za-z0-9_-]{1,128}`. */
   wide_ids?: boolean;
+  /** Yes/no questions may carry `yes_description` / `no_description`. */
+  yesno_descriptions?: boolean;
   probabilities?: "provider" | "logprob" | "nli";
   locality?: "cloud" | "network" | "device";
 };
@@ -219,27 +221,27 @@ export function classifyHttp(response: { status: number; headers?: Record<string
 export function capabilities(model: string, options?: { wasm?: BufferSource | WebAssembly.Module }): Promise<Capabilities>;
 export function mockEngine(options?: { answers?: Record<string, Answer>; model?: string; probabilitySource?: "provider" | "logprob" | "nli" }): Engine;
 
-/** A provider described as data. `extends` starts from a built-in; objects merge, arrays replace. */
+/** A provider described as data. `extends` a built-in and set what differs; objects merge, arrays replace. */
 export interface DialectSpec {
-  extends?: "jev" | "clef" | "gemini" | "openai" | "systemone";
-  family?: "systemone" | "openai";
+  extends: "jev" | "clef" | "gemini" | "openai" | "systemone";
   /** Default endpoint; a provider's `baseUrl` setting overrides it. */
   base_url?: string;
-  /** Placeholders: `{model}`, `{account_id}`. */
+  /** Placeholders: `{model}`, `{account_id}`, `{options.<name>}` (from the provider's `options`). */
   path?: string;
-  auth?: { header: string; scheme?: "bearer" | "raw"; required?: boolean };
+  /** Scheme inferred: `authorization` gets `Bearer <key>`, any other header the raw key. */
+  auth?: { header?: string; scheme?: "bearer" | "raw"; required?: boolean };
+  /** `state`: JSON input as-is. `input`: JSON input as text (Gemini style). */
   input_field?: "state" | "input";
-  json_input?: "value" | "text";
   media_encoding?: "none" | "jev_assets" | "data_url_list" | "typed_blocks" | "content_parts";
-  /** Sent only when a request has media. */
-  media_headers?: [string, string][];
   /** Replies wrapped under this key, e.g. `"result"`. */
   envelope?: string;
   /** HTTP 400 `error.code` values that mean "input blocked": every answer is `refused`. */
   blocked_error_codes?: string[];
-  yesno_descriptions?: boolean;
   capabilities?: Capabilities;
 }
 
-export function dialect(name: string, options?: { wasm?: BufferSource | WebAssembly.Module }): Promise<DialectSpec>;
-export function resolveDialect(spec: DialectSpec, options?: { wasm?: BufferSource | WebAssembly.Module }): Promise<DialectSpec>;
+/** A dialect after `extends` is applied, as `dialect()` and `resolveDialect()` return it. */
+export type ResolvedDialect = Omit<DialectSpec, "extends"> & { family: "systemone" | "openai" };
+
+export function dialect(name: string, options?: { wasm?: BufferSource | WebAssembly.Module }): Promise<ResolvedDialect>;
+export function resolveDialect(spec: DialectSpec, options?: { wasm?: BufferSource | WebAssembly.Module }): Promise<ResolvedDialect>;
