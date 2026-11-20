@@ -30,6 +30,8 @@ pub enum ProbabilitySource {
     Logprob,
     /// Entailment scores from an NLI classifier.
     Nli,
+    /// Weighted vote shares from a panel (`merge`); not a model's probability.
+    Vote,
 }
 
 /// Request limits and properties of one provider. `None` means no limit.

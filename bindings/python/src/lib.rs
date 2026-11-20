@@ -32,12 +32,18 @@ fn classify_http(response: &str) -> String {
     letsdecide::json::classify_http(response)
 }
 
+#[pyfunction]
+fn merge(request: &str, members: &str, rules: &str) -> String {
+    letsdecide::json::merge(request, members, rules)
+}
+
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(build, m)?)?;
     m.add_function(wrap_pyfunction!(parse, m)?)?;
     m.add_function(wrap_pyfunction!(capabilities, m)?)?;
     m.add_function(wrap_pyfunction!(validate, m)?)?;
+    m.add_function(wrap_pyfunction!(merge, m)?)?;
     m.add_function(wrap_pyfunction!(check, m)?)?;
     m.add_function(wrap_pyfunction!(classify_http, m)?)?;
     Ok(())

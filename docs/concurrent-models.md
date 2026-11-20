@@ -53,7 +53,7 @@ never holds keys.
       { "model": "gemini/gemini-decision-1", "weight": 2 },
       { "model": "openai/gpt-6-luna", "enabled": false }
     ],
-    "rules": { "quorum": 2, "timeout_ms": 3000, "on_disagree": "flag" }
+    "rules": { "quorum": 2, "timeout_ms": 3000 }
   }
 }
 ```
@@ -76,39 +76,54 @@ never holds keys.
 
 | Rule | Meaning | Default |
 |---|---|---|
-| `quorum` | Minimum successful members, else throw the last error | `1` |
-| `timeout_ms` | Panel deadline; merge whatever has arrived | none |
-| `on_disagree` | `flag` (marked in the output) · `error` · `primary` (use the first member) | `flag` |
+| `quorum` | Minimum members that must answer, else the last member's error is thrown (same code, status and retry hint, reason `below_quorum`) | `1` |
+| `timeout_ms` | Panel deadline (host side); merge whatever has arrived | none |
+| `merge` | `vote` or `mean` (below) | `vote` |
+
+Disagreement is always reported in `disagreed`, never acted on. An app that
+wants to reject a split panel checks `res.disagreed.length`. A "use the first
+member" option was dropped: it would put one provider's raw numbers into a
+response labelled as vote shares.
 
 Members skipped by capabilities are recorded in `res.panel` and don't count
 toward quorum.
 
 ## Merging (`src/merge.rs`, pure)
 
-`merge(request, [(member, response | error, weight)], rules)`:
+Built. `merge(request, members, rules)` in Rust; `json::merge(request, members, rules)`
+for bindings (WASM, Python, UniFFI), where each member is
+`{ model, weight?, response | error | skipped: true }`. A member's error
+message from the host is dropped (it may come from user code); its code,
+status, retry hint and details are kept.
+
 
 - Runs `DecisionResponse::check` on every member first, even if the app ever
   opts out of checking the final response.
 - **Default vote, scale-free.** Yes/no: weighted majority of `p >= 0.5`.
   Choice and score: weighted majority of the top option or level id. Ids are
   the caller's, so they compare across providers. Score `value` is never
-  averaged. This is valid across any `probability_source`.
+  averaged: the merged `value` is the winning level's 0-based index (ADR 0004).
+  Merged probabilities are weighted vote shares, so the response's
+  `probability_source` is the new value `vote`. This is valid across any source.
 - **`merge: "mean"` is opt-in.** If members have different `probability_source`
   values (`provider`, `logprob`, `nli`), it fails with `Unsupported`, reason
   `mixed_probability_source`. It refuses rather than warns, because averaging
   numbers on different scales is the silent degradation ADR 0005 forbids.
+  The merged score `value` is the expected index of the mean distribution.
 - `Refused` answers abstain, and a question where every member refused stays
-  `Refused`.
+  `Refused`. Ties go to the label voted for first, so config order breaks them.
+- A member whose response fails `check` counts as failed (`BadResponse`, with
+  its prefix as `provider`).
+- `input_tokens` is summed over answering members.
 - Errors use `Error::detailed`: `provider` = member prefix, `question` = id.
-  New `Reason` variants (in `error.rs` and the JS `Reason` union in `index.d.ts`): `mixed_probability_source`, `below_quorum`,
-  `members_disagree`.
+  New `Reason` variants: `below_quorum`, `mixed_probability_source`.
 
 ## Output stays a `DecisionResponse`
 
 ```js
 res.answers.flagged          // merged answer, same shape as one model
 res.agreement.flagged        // 0..1, weighted share that agreed with the winner
-res.disagreed                // ["flagged"] when on_disagree = "flag"
+res.disagreed                // questions where voters weren't unanimous
 res.panel["jev/jev-latest"]  // raw response, { error }, or { skipped: reason }, plus ms
 ```
 
@@ -145,9 +160,10 @@ new Client({
 
 1. **P2 (custom-providers session), built, not yet pushed:** the `{ signal, decide }` engine option
    with a depth guard, `client.capabilities(model)` and `byProvider`.
-2. **Core `merge.rs`** with the new reasons. Golden tests: unanimous, split,
-   all refused, mixed `probability_source` under `mean`, below quorum, a
-   malformed member.
+2. ✅ **Core `merge.rs`** with the new reasons, `json::merge` in every binding,
+   tests in `tests/merge.rs` (unanimous, weighted split, ties, refusals,
+   `mean` and mixed sources, below quorum, malformed member, bad rules, JSON
+   entry and host messages never echoed).
 3. **`panelEngine` in JS:** the three modes, enabled flags, getter config,
    abort of losers, the capability skip.
 4. **Python parity** (`AsyncClient`).

@@ -38,3 +38,8 @@ pub fn check(request: String, response: String) -> String {
 pub fn classify_http(response: String) -> String {
     letsdecide::json::classify_http(&response)
 }
+
+#[uniffi::export]
+pub fn merge(request: String, members: String, rules: String) -> String {
+    letsdecide::json::merge(&request, &members, &rules)
+}

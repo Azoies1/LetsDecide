@@ -5,6 +5,7 @@ mod cost;
 mod error;
 mod gemini;
 pub mod json;
+mod merge;
 mod model;
 mod openai;
 mod provider;
@@ -13,6 +14,7 @@ mod systemone;
 pub use capabilities::{Capabilities, Locality, ProbabilitySource};
 pub use cost::estimate_cost_usd;
 pub use error::{Details, Error, ErrorCode, Reason};
+pub use merge::{merge, Member, Merged, Method, Outcome, Rules};
 pub use model::*;
 pub use openai::OpenAi;
 pub use provider::{

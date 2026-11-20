@@ -51,7 +51,7 @@ export interface DecisionResponse {
   /** Present when every answer is `refused` and the provider gave a reason. */
   block_reason?: string;
   /** Never compare numbers across sources as if on one scale. */
-  probability_source: "provider" | "logprob" | "nli";
+  probability_source: "provider" | "logprob" | "nli" | "vote";
 }
 
 export interface ClientConfig {
@@ -90,7 +90,7 @@ export type Reason =
   | "media_not_accepted" | "question_kind" | "unknown_provider" | "no_logprobs"
   | "multi_token_label" | "missing_config" | "invalid_config" | "name_taken"
   | "missing_answer" | "unexpected_answer" | "wrong_answer_kind" | "unknown_id"
-  | "invalid_number";
+  | "invalid_number" | "below_quorum" | "mixed_probability_source";
 
 /** Safe to log by construction: no keys, header values, input or bodies. */
 export interface ErrorDetails {

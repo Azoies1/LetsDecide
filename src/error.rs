@@ -44,6 +44,11 @@ pub enum Reason {
     WrongAnswerKind,
     UnknownId,
     InvalidNumber,
+    // Panels (`merge`).
+    /// Fewer members answered than the panel's `quorum`.
+    BelowQuorum,
+    /// `mean` merge over members whose `probability_source` differs.
+    MixedProbabilitySource,
 }
 
 /// Structured context for an [`Error`].

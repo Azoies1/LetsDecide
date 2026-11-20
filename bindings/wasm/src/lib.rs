@@ -31,3 +31,8 @@ pub fn check(request: &str, response: &str) -> String {
 pub fn classify_http(response: &str) -> String {
     letsdecide::json::classify_http(response)
 }
+
+#[wasm_bindgen]
+pub fn merge(request: &str, members: &str, rules: &str) -> String {
+    letsdecide::json::merge(request, members, rules)
+}
