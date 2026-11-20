@@ -1,0 +1,15 @@
+{
+  "_doc": "Jev System One API. Source: Jev's OpenAPI spec (api.typesafe.ai/openapi.json).",
+  "family": "systemone",
+  "base_url": "https://api.typesafe.ai",
+  "path": "/v1/systemone",
+  "auth": { "header": "authorization", "scheme": "bearer" },
+  "input_field": "state",
+  "json_input": "value",
+  "media_encoding": "jev_assets",
+  "media_headers": [["typesafe-danger-zone-images", "true"]],
+  "capabilities": {
+    "max_levels": 10,
+    "media": ["image/png", "image/jpeg"]
+  }
+}

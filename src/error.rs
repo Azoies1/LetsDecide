@@ -200,6 +200,25 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+/// For dialects: keeps serde's messages that name a field or variant (so a
+/// typo like `"sheme"` is pointed out), drops ones that could quote a value.
+pub(crate) fn safe_dialect_message(e: &serde_json::Error) -> String {
+    let msg = e.to_string();
+    let named = [
+        "missing field `",
+        "unknown field `",
+        "unknown variant `",
+        "duplicate field `",
+    ];
+    if named.iter().any(|p| msg.starts_with(p)) {
+        // Drop serde's position: it points into the merged dialect, not the input.
+        let msg = msg.split(" at line ").next().unwrap_or(&msg);
+        format!("dialect: {msg}")
+    } else {
+        safe_serde_message("dialect", e)
+    }
+}
+
 /// serde's messages can quote the offending value (e.g. `invalid type:
 /// string "…"`), which may be user input or a response body. Keep only
 /// messages that name our own fields, plus the position.

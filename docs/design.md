@@ -79,7 +79,7 @@ answers fail as `BadResponse` instead of reaching the app.
 | Rung | User writes | Status |
 |---|---|---|
 | 0. Config | `base_url`, `headers`, `options` | built |
-| 1. Dialect | data describing a System One / OpenAI variant | planned |
+| 1. Dialect | data describing a System One / OpenAI variant ([dialects.md](dialects.md)) | built; every built-in is one |
 | 2. Codec | `build` + `parse` (+ `capabilities`) in their language | Rust: built (`Registry`). JS/Python: planned |
 | 3. Engine | one async `decide()`; for non-HTTP and local models | planned |
 
@@ -111,6 +111,9 @@ Numbered records live in [adr/](adr/README.md); the list below is the original s
   later (UniFFI, napi-rs, PyO3, wasm-bindgen). Fallback if too heavy: TypeScript
   + Swift sharing the same JSON fixtures.
 - **`BTreeMap` for questions.** Deterministic output; no extra crate.
+- **Providers are dialects** (ADR 0015). Every built-in is data in
+  `spec/dialects/*.json`; the two wire families are code. Media encodings
+  are named strategies, not templates.
 - **Gemini is a System One preset.** The spec expected a separate adapter;
   the reference showed otherwise.
 - **`Refused` carries no reason.** OpenAI's refusal has none; Gemini blocks the
@@ -209,6 +212,7 @@ Custom and local providers: phases P2–P6 in
   as `ProviderError` (planned, P2).
 - `headers` reject names that aren't HTTP tokens and values with line breaks
   (no header injection).
-- Multi-tenant apps that load dialects (planned) from tenant settings must
-  allowlist hosts: a tenant-chosen URL is an SSRF vector.
+- Multi-tenant apps that load dialects from tenant settings must allowlist
+  hosts: a tenant-chosen URL is an SSRF vector. Values filled into a dialect
+  path (`{model}`, `{account_id}`) must be a single path segment.
 - Browser code: a key in client code is public. Call through your backend.

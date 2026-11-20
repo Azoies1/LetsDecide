@@ -1,0 +1,13 @@
+{
+  "_doc": "OpenAI Decisions (POST /v1/decisions). Source: OpenAI's API reference. base_url can point at a compatible endpoint.",
+  "family": "openai",
+  "base_url": "https://api.openai.com",
+  "path": "/v1/decisions",
+  "auth": { "header": "authorization", "scheme": "bearer" },
+  "media_encoding": "content_parts",
+  "capabilities": {
+    "max_questions": 400,
+    "max_levels": 10,
+    "media": ["image/*"]
+  }
+}

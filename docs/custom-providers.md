@@ -10,7 +10,8 @@ Pick the lightest option that works:
 |---|---|---|
 | A server that speaks System One exactly | `systemone/<model>` + `byProvider.systemone.baseUrl` | none |
 | The same, behind a gateway or with other auth | add `headers` | none |
-| Any HTTP decision API | a **codec**: `build` + `parse` | two functions |
+| A System One or OpenAI variant (other path, auth, input field, limits), or a built-in whose API changed | a **dialect**: data, see [dialects.md](dialects.md) | none |
+| Any other HTTP decision API | a **codec**: `build` + `parse` | two functions |
 | Something that isn't one HTTP call (local model, rules, a mock) | an **engine**: `decide` | one function |
 
 Whatever you pick, the client:

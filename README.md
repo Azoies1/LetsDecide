@@ -221,6 +221,21 @@ let out = providers.parse("acme/decide-2", &req, &res)?;                // respo
 
 A server that already speaks System One needs no code: use
 `systemone/<model>` with `base_url` (and `headers` if it wants other auth).
+An API that is *almost* System One or OpenAI (another path, auth header,
+input field, limits) is a **dialect**: data, no code. Every built-in is one,
+so a vendor's API change can be patched the same way:
+
+```js
+new Client(cfg, {
+  dialects: {
+    acme: { extends: "jev", base_url: "https://api.acme.ai", path: "/v1/decisions" },
+    gemini: { extends: "gemini", path: "/v1/decisions" }, // patch a built-in
+  },
+  replace: ["gemini"],
+});
+```
+
+See [docs/dialects.md](docs/dialects.md).
 
 ## JavaScript / TypeScript
 
@@ -312,11 +327,11 @@ Built in small steps; each lands only when needed. Details in
 - [x] Extras: OpenAI image URLs, `confidence_source`, cost estimates, `provider_extras`
 - [ ] Optional: live contract tests (not built: each run spends real tokens)
 - [ ] First release (crates.io, npm, PyPI, Maven, SwiftPM)
-- [ ] **M6** Custom providers and local models ([plan](docs/plan-custom-and-local-providers.md)). Done: registry, capabilities, response checks, error details, `headers`/`options` (P1); custom codecs and engines in JS and Python, mock engine, conformance kit (P2). Next: dialects (P3), local label scorer and sidecar (P4)
+- [ ] **M6** Custom providers and local models ([plan](docs/plan-custom-and-local-providers.md)). Done: registry, capabilities, response checks, error details, `headers`/`options` (P1); custom codecs and engines in JS and Python, mock engine, conformance kit (P2); per-provider credentials; dialects, with every built-in as data (P3)
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Adding a provider is one file plus fixtures.
+See [CONTRIBUTING.md](CONTRIBUTING.md). Adding a System One or OpenAI style provider is one JSON dialect plus fixtures; anything else is one file plus fixtures.
 
 ## Licence
 

@@ -5,7 +5,7 @@
 use crate::error::safe_serde_message;
 use crate::{
     estimate_cost_usd, http_error, Capabilities, Config, DecisionRequest, DecisionResponse,
-    Details, Error, ErrorCode, HttpResponse, Registry,
+    Details, Dialect, Error, ErrorCode, HttpResponse, Provider, Registry,
 };
 use serde::{Deserialize, Serialize};
 
@@ -113,6 +113,62 @@ pub fn parse(model: &str, request: &str, response: &str) -> String {
             estimated_cost_usd: out.input_tokens.and_then(|t| estimate_cost_usd(model, t)),
             response: out,
         })
+    })
+}
+
+/// A built-in dialect (`jev`, `clef`, `gemini`, `openai`, `systemone`) as
+/// JSON, to read or copy as a starting point.
+pub fn dialect(name: &str) -> String {
+    run(|| {
+        Dialect::builtin_json(name).ok_or_else(|| {
+            let mut d = Details::new(crate::Reason::UnknownProvider);
+            d.provider = Some(name.to_owned());
+            Error::detailed(
+                ErrorCode::Unsupported,
+                format!("no built-in dialect `{name}`"),
+                d,
+            )
+        })
+    })
+}
+
+/// Validates a dialect and expands `extends`. Returns the full dialect, which
+/// `build_dialect` / `parse_dialect` take. Bindings call this once, when the
+/// dialect is registered.
+pub fn resolve_dialect(dialect: &str) -> String {
+    run(|| Dialect::from_json(dialect))
+}
+
+fn dialect_in(dialect: &str) -> Result<Dialect, Error> {
+    Dialect::from_json(dialect)
+}
+
+/// As [`build`], with a dialect instead of a built-in. `model` is the model
+/// name alone (no `provider/` prefix). Capabilities are checked first.
+pub fn build_dialect(dialect: &str, model: &str, request: &str, config: &str) -> String {
+    run(|| {
+        let d = dialect_in(dialect)?;
+        let req: DecisionRequest = serde_json::from_str(request).map_err(invalid("request"))?;
+        let cfg: Config = serde_json::from_str(config).map_err(invalid("config"))?;
+        d.capabilities.check(&req)?;
+        let http = d.build(model, &req, &cfg)?;
+        Ok(HttpOut {
+            method: http.method,
+            url: http.url,
+            headers: http.headers,
+            body: String::from_utf8(http.body).expect("JSON is UTF-8"),
+        })
+    })
+}
+
+/// As [`parse`], with a dialect. The response is [checked](DecisionResponse::check).
+pub fn parse_dialect(dialect: &str, request: &str, response: &str) -> String {
+    run(|| {
+        let d = dialect_in(dialect)?;
+        let req: DecisionRequest = serde_json::from_str(request).map_err(invalid("request"))?;
+        let out = d.parse(&req, &http_in(response)?)?;
+        out.check(&req)?;
+        Ok(out)
     })
 }
 

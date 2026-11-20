@@ -92,7 +92,9 @@ export interface ClientOptions {
   providers?: Record<string, Codec>;
   /** Custom engines by name. */
   engines?: Record<string, Engine>;
-  /** Built-in names that `providers` or `engines` may override. */
+  /** Providers described as data, by name. See `docs/dialects.md`. */
+  dialects?: Record<string, DialectSpec>;
+  /** Built-in names that `providers`, `engines` or `dialects` may override. */
   replace?: string[];
 }
 
@@ -216,3 +218,28 @@ export function check(request: DecisionRequest, response: unknown, options?: { w
 export function classifyHttp(response: { status: number; headers?: Record<string, string> | [string, string][]; body?: string }, options?: { wasm?: BufferSource | WebAssembly.Module }): Promise<LetsDecideError>;
 export function capabilities(model: string, options?: { wasm?: BufferSource | WebAssembly.Module }): Promise<Capabilities>;
 export function mockEngine(options?: { answers?: Record<string, Answer>; model?: string; probabilitySource?: "provider" | "logprob" | "nli" }): Engine;
+
+/** A provider described as data. `extends` starts from a built-in; objects merge, arrays replace. */
+export interface DialectSpec {
+  extends?: "jev" | "clef" | "gemini" | "openai" | "systemone";
+  family?: "systemone" | "openai";
+  /** Default endpoint; a provider's `baseUrl` setting overrides it. */
+  base_url?: string;
+  /** Placeholders: `{model}`, `{account_id}`. */
+  path?: string;
+  auth?: { header: string; scheme?: "bearer" | "raw"; required?: boolean };
+  input_field?: "state" | "input";
+  json_input?: "value" | "text";
+  media_encoding?: "none" | "jev_assets" | "data_url_list" | "typed_blocks" | "content_parts";
+  /** Sent only when a request has media. */
+  media_headers?: [string, string][];
+  /** Replies wrapped under this key, e.g. `"result"`. */
+  envelope?: string;
+  /** HTTP 400 `error.code` values that mean "input blocked": every answer is `refused`. */
+  blocked_error_codes?: string[];
+  yesno_descriptions?: boolean;
+  capabilities?: Capabilities;
+}
+
+export function dialect(name: string, options?: { wasm?: BufferSource | WebAssembly.Module }): Promise<DialectSpec>;
+export function resolveDialect(spec: DialectSpec, options?: { wasm?: BufferSource | WebAssembly.Module }): Promise<DialectSpec>;

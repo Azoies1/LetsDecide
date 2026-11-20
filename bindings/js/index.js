@@ -128,11 +128,13 @@ export class Client {
    *   only ever sees its own entry. Any value may be a function (sync or async), called on every
    *   request, e.g. to refresh an OAuth token. `headers`: sent to every provider (tracing,
    *   gateways); never put secrets there.
-   * @param opts `{ fetch, wasm, providers, engines, replace }`. `providers`: custom HTTP
+   * @param opts `{ fetch, wasm, providers, engines, dialects, replace }`. `providers`: custom HTTP
    *   codecs `{ build, parse, capabilities? }` by name. `engines`: custom `{ decide,
-   *   capabilities? }` by name (local models, mocks). `replace`: built-in names they may override.
+   *   capabilities? }` by name (local models, mocks). `dialects`: providers described as data,
+   *   e.g. `{ acme: { extends: "jev", base_url, path } }`. `replace`: built-in names they may
+   *   override (e.g. a patched `gemini` dialect).
    */
-  constructor(config = {}, { fetch = globalThis.fetch, wasm, providers = {}, engines = {}, replace = [] } = {}) {
+  constructor(config = {}, { fetch = globalThis.fetch, wasm, providers = {}, engines = {}, dialects = {}, replace = [] } = {}) {
     for (const k of Object.keys(config)) {
       if (!SHARED.includes(k)) {
         const hint = PER_PROVIDER.includes(k) ? `set it per provider: byProvider.<name>.${k}` : "unknown setting";
@@ -159,7 +161,8 @@ export class Client {
     this.fetch = fetch;
     this.wasm = wasm;
     this.custom = new Map();
-    for (const [kind, table] of [["codec", providers], ["engine", engines]]) {
+    const fromDialects = Object.fromEntries(Object.entries(dialects).map(([n, spec]) => [n, dialectCodec(spec)]));
+    for (const [kind, table] of [["codec", providers], ["engine", engines], ["codec", fromDialects]]) {
       for (const [name, impl] of Object.entries(table)) {
         if (!NAME.test(name)) {
           throw new LetsDecideError({
@@ -222,14 +225,7 @@ export class Client {
     if (custom) return this.#decideCustom(name, model.slice(name.length + 1), custom, request, signal, depth);
     const req = JSON.stringify(request);
     const cfg = await this.#config(name);
-    const config = JSON.stringify({
-      api_key: cfg.apiKey,
-      access_token: cfg.accessToken,
-      base_url: cfg.baseUrl,
-      account_id: cfg.accountId,
-      headers: cfg.headers,
-      options: cfg.options,
-    });
+    const config = JSON.stringify(coreConfig(cfg));
     const http = unwrap(build(model, req, config));
     const response = await this.#send(http, signal);
     return unwrap(parse(model, req, JSON.stringify(response)));
@@ -283,6 +279,48 @@ export class Client {
       throw tag(e);
     }
   }
+}
+
+/** Config as the core takes it (snake_case). */
+const coreConfig = (c) => ({
+  api_key: c.apiKey,
+  access_token: c.accessToken,
+  base_url: c.baseUrl,
+  account_id: c.accountId,
+  headers: c.headers,
+  options: c.options,
+});
+
+/**
+ * A dialect run by the core, as a codec. Resolved (and validated) once, on first use,
+ * because the WASM core loads asynchronously; call `resolveDialect` to check one up front.
+ */
+function dialectCodec(spec) {
+  let resolved;
+  const get = () => (resolved ??= JSON.stringify(unwrap(core.resolve_dialect(JSON.stringify(spec)))));
+  return {
+    get capabilities() {
+      return JSON.parse(get()).capabilities;
+    },
+    build(model, request, config) {
+      return unwrap(core.build_dialect(get(), model, JSON.stringify(request), JSON.stringify(coreConfig(config))));
+    },
+    parse(request, response) {
+      return unwrap(core.parse_dialect(get(), JSON.stringify(request), JSON.stringify(response)));
+    },
+  };
+}
+
+/** A built-in dialect (`jev`, `clef`, `gemini`, `openai`, `systemone`) as JSON, to read or extend. */
+export async function dialect(name, { wasm } = {}) {
+  await initialize(wasm);
+  return unwrap(core.dialect(name));
+}
+
+/** Validates a dialect and expands `extends`; throws `LetsDecideError` on a bad one. */
+export async function resolveDialect(spec, { wasm } = {}) {
+  await initialize(wasm);
+  return unwrap(core.resolve_dialect(JSON.stringify(spec)));
 }
 
 /**

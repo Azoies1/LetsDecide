@@ -37,11 +37,35 @@ fn classify_http(response: &str) -> String {
     letsdecide::json::classify_http(response)
 }
 
+#[pyfunction]
+fn dialect(name: &str) -> String {
+    letsdecide::json::dialect(name)
+}
+
+#[pyfunction]
+fn resolve_dialect(dialect: &str) -> String {
+    letsdecide::json::resolve_dialect(dialect)
+}
+
+#[pyfunction]
+fn build_dialect(dialect: &str, model: &str, request: &str, config: &str) -> String {
+    letsdecide::json::build_dialect(dialect, model, request, config)
+}
+
+#[pyfunction]
+fn parse_dialect(dialect: &str, request: &str, response: &str) -> String {
+    letsdecide::json::parse_dialect(dialect, request, response)
+}
+
 #[pymodule]
 fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(build, m)?)?;
     m.add_function(wrap_pyfunction!(parse, m)?)?;
     m.add_function(wrap_pyfunction!(builtins, m)?)?;
+    m.add_function(wrap_pyfunction!(dialect, m)?)?;
+    m.add_function(wrap_pyfunction!(resolve_dialect, m)?)?;
+    m.add_function(wrap_pyfunction!(build_dialect, m)?)?;
+    m.add_function(wrap_pyfunction!(parse_dialect, m)?)?;
     m.add_function(wrap_pyfunction!(capabilities, m)?)?;
     m.add_function(wrap_pyfunction!(validate, m)?)?;
     m.add_function(wrap_pyfunction!(check, m)?)?;

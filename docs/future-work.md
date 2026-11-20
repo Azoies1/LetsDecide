@@ -47,7 +47,10 @@ Plan and decisions: [plan-custom-and-local-providers.md](plan-custom-and-local-p
 - [x] **P2** Custom codecs and engines in JS and Python; built-in `mock`
   engine; conformance kit over the golden fixture format; `ProviderError`
   wrapping of user exceptions; guide `docs/custom-providers.md`.
-- [ ] **P3** Dialects for the System One and OpenAI families.
+- [x] **P3** Dialects for the System One and OpenAI families; built-ins are
+  dialects (`spec/dialects/`). Not yet: dialects in the Kotlin and Swift
+  clients (the UniFFI crate exports the entry points); verified example
+  dialects for Perplexity and Microsoft-Decision-1 once their docs are read.
 - [ ] **P4** Local label scorer in the core; `letsdecide-serve` sidecar.
 - [ ] **P5** In-process engines (Python, JS); `escalate` and capability-aware
   `fallback` middleware (`shadow` already ships).

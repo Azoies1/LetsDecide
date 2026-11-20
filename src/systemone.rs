@@ -1,5 +1,7 @@
-//! Adapter for the System One wire family: Jev, Clef, Gemini and compatible
-//! servers. One shape, four presets.
+//! The System One wire family: Jev, Clef, Gemini and compatible servers.
+//! What differs between them is data in their [`Dialect`]
+//! (`spec/dialects/*.json`): endpoint, auth, input field, media encoding,
+//! envelope, block codes and limits.
 //!
 //! Verified against: Jev's OpenAPI spec (api.typesafe.ai/openapi.json), Clef's
 //! Cloudflare docs, and Google's official Gemini Decisions pages (read
@@ -13,168 +15,70 @@
 //! `prompt_feedback.block_reason`, or HTTP 400 + `error.code`) applies when.
 //! Both are handled.
 
+use crate::dialect::{Dialect, InputField, JsonInput, MediaEncoding};
 use crate::error::safe_serde_message;
 use crate::gemini;
-use crate::model::{confidence, DOCUMENT_MIME};
-use crate::provider::{encode, post};
+use crate::model::confidence;
+use crate::provider::encode;
 use crate::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-/// Presets: `jev`, `clef`, `gemini`, `systemone` (custom base URL).
-pub struct SystemOne {
-    preset: Preset,
-}
-
-#[derive(Clone, Copy, PartialEq)]
-enum Preset {
-    Jev,
-    Clef,
-    Gemini,
-    Custom,
-}
-
-impl SystemOne {
-    pub fn preset(name: &str) -> Option<Self> {
-        let preset = match name {
-            "jev" => Preset::Jev,
-            "clef" => Preset::Clef,
-            "gemini" => Preset::Gemini,
-            "systemone" => Preset::Custom,
-            _ => return None,
-        };
-        Some(Self { preset })
-    }
-
-    fn url(&self, model: &str, cfg: &Config) -> Result<String, Error> {
-        let missing = |what| Error::new(ErrorCode::InvalidRequest, format!("{what} is required"));
-        let base = |default: &str| {
-            cfg.base_url
-                .as_deref()
-                .unwrap_or(default)
-                .trim_end_matches('/')
-                .to_owned()
-        };
-        Ok(match self.preset {
-            Preset::Jev => base("https://api.typesafe.ai") + "/v1/systemone",
-            Preset::Gemini => {
-                base("https://generativelanguage.googleapis.com") + "/v1beta/decisions"
+/// Puts input and media where the dialect expects them.
+fn attach_input<'a>(
+    d: &Dialect,
+    req: &'a DecisionRequest,
+    body: &mut Body<'a>,
+) -> Result<(), Error> {
+    // Media types and counts were checked against the capabilities already.
+    let media = &req.media;
+    let text = || match &req.input {
+        Value::String(_) => req.input.clone(),
+        other => Value::String(other.to_string()),
+    };
+    let mut value: Cow<'a, Value> = match d.json_input {
+        JsonInput::Value => Cow::Borrowed(&req.input),
+        JsonInput::Text => Cow::Owned(text()),
+    };
+    match d.media_encoding {
+        MediaEncoding::None | MediaEncoding::ContentParts => {}
+        MediaEncoding::TypedBlocks => {
+            if !media.is_empty() {
+                value = Cow::Owned(gemini::blocks(value.into_owned(), media)?);
             }
-            Preset::Custom => {
-                if cfg.base_url.is_none() {
-                    return Err(missing("base_url"));
-                }
-                base("") + "/v1/systemone"
-            }
-            Preset::Clef => {
-                let id = cfg
-                    .account_id
-                    .as_deref()
-                    .ok_or_else(|| missing("account_id"))?;
-                let root = base("https://api.cloudflare.com");
-                format!("{root}/client/v4/accounts/{id}/ai/run/@cf/cloudflare/{model}")
-            }
-        })
-    }
-
-    /// Gemini needs `api_key`; Clef needs `api_key` or an OAuth `access_token`.
-    /// Fails before any request is built instead of surfacing a late 401.
-    fn require_credentials(&self, cfg: &Config) -> Result<(), Error> {
-        let need = |m: &str| Err(Error::new(ErrorCode::InvalidRequest, m));
-        match self.preset {
-            Preset::Gemini if cfg.api_key.is_none() => need("api_key is required for gemini"),
-            Preset::Clef if cfg.api_key.is_none() && cfg.access_token.is_none() => {
-                need("api_key or access_token is required for clef")
-            }
-            _ => Ok(()),
         }
-    }
-
-    /// Documented per-request caps and accepted media.
-    fn caps(&self) -> Capabilities {
-        let mime = |l: &[&str]| l.iter().map(|m| (*m).to_owned()).collect();
-        match self.preset {
-            Preset::Jev => Capabilities {
-                max_levels: Some(10),
-                media: mime(&["image/png", "image/jpeg"]),
-                ..Default::default()
-            },
-            Preset::Clef => Capabilities {
-                max_questions: Some(64),
-                max_levels: Some(10),
-                max_media: Some(4),
-                media: mime(&["image/png", "image/jpeg", "image/webp"]),
-                ..Default::default()
-            },
-            Preset::Gemini => {
-                let mut media: Vec<String> = mime(&gemini::IMAGE_MIME);
-                media.extend(mime(&["audio/*", "video/*"]));
-                media.extend(mime(&DOCUMENT_MIME));
-                Capabilities {
-                    max_questions: Some(1000),
-                    max_options: Some(255),
-                    max_levels: Some(255),
-                    media,
-                    wide_ids: true,
-                    ..Default::default()
-                }
+        MediaEncoding::DataUrlList => body.images = media.iter().map(Media::data_url).collect(),
+        MediaEncoding::JevAssets if !media.is_empty() => {
+            // Placeholders in the input are swapped for the assets server-side.
+            let mut refs = vec![];
+            for (n, img) in media.iter().enumerate() {
+                let format = img
+                    .mime_type
+                    .strip_prefix("image/")
+                    .unwrap_or(&img.mime_type);
+                let key = format!("letsdecide-image-{n}");
+                let asset = json!({ "type": "image", "format": format, "data_base64": img.data });
+                body.assets.insert(key.clone(), asset);
+                refs.push(key);
             }
-            Preset::Custom => Capabilities {
-                locality: Locality::Network,
-                ..Default::default()
-            },
+            value = Cow::Owned(match value.into_owned() {
+                Value::String(t) => Value::String(format!("{t}\n{}", refs.join("\n"))),
+                other => Value::Array(
+                    std::iter::once(other)
+                        .chain(refs.into_iter().map(Value::String))
+                        .collect(),
+                ),
+            });
         }
+        MediaEncoding::JevAssets => {}
     }
-
-    /// Puts input and media where this preset expects them.
-    fn attach_input<'a>(
-        &self,
-        req: &'a DecisionRequest,
-        body: &mut Body<'a>,
-        header: &mut Option<(String, String)>,
-    ) -> Result<(), Error> {
-        // Media types and counts were checked against `caps()` already.
-        let unsupported = |m: &str| Err(Error::new(ErrorCode::Unsupported, m));
-        let media = &req.media;
-        body.state = Some(Cow::Borrowed(&req.input));
-        match self.preset {
-            Preset::Gemini => {
-                body.state = None;
-                body.input = Some(gemini::input(req)?);
-            }
-            Preset::Clef => body.images = media.iter().map(Media::data_url).collect(),
-            Preset::Jev if !media.is_empty() => {
-                // Placeholders in `state` are swapped for the assets server-side.
-                let mut refs = vec![];
-                for (n, img) in media.iter().enumerate() {
-                    let format = match img.mime_type.as_str() {
-                        "image/png" => "png",
-                        "image/jpeg" => "jpeg",
-                        _ => return unsupported("Jev images must be PNG or JPEG"),
-                    };
-                    let key = format!("letsdecide-image-{n}");
-                    let asset =
-                        json!({ "type": "image", "format": format, "data_base64": img.data });
-                    body.assets.insert(key.clone(), asset);
-                    refs.push(key);
-                }
-                body.state = Some(Cow::Owned(match &req.input {
-                    Value::String(t) => Value::String(format!("{t}\n{}", refs.join("\n"))),
-                    other => Value::Array(
-                        std::iter::once(other.clone())
-                            .chain(refs.into_iter().map(Value::String))
-                            .collect(),
-                    ),
-                }));
-                // Jev gates image requests behind this header.
-                *header = Some(("typesafe-danger-zone-images".into(), "true".into()));
-            }
-            Preset::Jev | Preset::Custom => {}
-        }
-        Ok(())
+    match d.input_field {
+        InputField::State => body.state = Some(value),
+        InputField::Input => body.input = Some(value),
     }
+    Ok(())
 }
 
 // Request wire types, borrowed so the body is serialised straight to one buffer.
@@ -185,7 +89,7 @@ struct Body<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     state: Option<Cow<'a, Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    input: Option<Value>,
+    input: Option<Cow<'a, Value>>,
     // Clef: data URLs.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     images: Vec<String>,
@@ -224,8 +128,6 @@ enum Wire<'a> {
 // Response wire types.
 #[derive(Deserialize)]
 struct Reply {
-    /// Cloudflare (Clef) wraps the payload: `{"result": {...}, "success": true}`.
-    result: Option<Box<Reply>>,
     model: Option<String>,
     #[serde(default)]
     answers: BTreeMap<Id, RawAnswer>,
@@ -255,23 +157,20 @@ struct RawAnswer {
     probabilities: BTreeMap<String, f32>,
 }
 
-impl Provider for SystemOne {
-    fn capabilities(&self, _model: &str) -> Capabilities {
-        self.caps()
-    }
-
-    fn build(
-        &self,
-        model: &str,
-        req: &DecisionRequest,
-        cfg: &Config,
-    ) -> Result<HttpRequest, Error> {
-        self.caps().check(req)?;
-        if self.preset != Preset::Gemini {
-            req.require_portable(false)?;
-        }
-        let questions = req
-            .questions
+pub(crate) fn build(
+    d: &Dialect,
+    model: &str,
+    req: &DecisionRequest,
+    cfg: &Config,
+) -> Result<HttpRequest, Error> {
+    d.capabilities.check(req)?;
+    req.require_portable(
+        d.media_encoding == MediaEncoding::TypedBlocks,
+        false,
+        d.yesno_descriptions,
+    )?;
+    let questions =
+        req.questions
             .iter()
             .map(|(id, q)| {
                 let wire = match q {
@@ -305,107 +204,111 @@ impl Provider for SystemOne {
                 (id.as_str(), wire)
             })
             .collect();
-        let mut body = Body {
-            model,
-            state: None,
-            input: None,
-            images: vec![],
-            assets: BTreeMap::new(),
-            questions,
-        };
-        let mut extra_header = None;
-        self.attach_input(req, &mut body, &mut extra_header)?;
-        let body = encode(&body, req)?;
-        let url = self.url(model, cfg)?;
-        self.require_credentials(cfg)?;
-        let mut http = match self.preset {
-            Preset::Gemini => post(url, "x-goog-api-key", false, cfg, body),
-            _ => post(url, "authorization", true, cfg, body),
-        };
-        http.headers.extend(extra_header);
-        apply_headers(&mut http, cfg)?;
-        Ok(http)
+    let mut body = Body {
+        model,
+        state: None,
+        input: None,
+        images: vec![],
+        assets: BTreeMap::new(),
+        questions,
+    };
+    attach_input(d, req, &mut body)?;
+    let body = encode(&body, req)?;
+    let url = d.url(model, cfg)?;
+    let mut headers = vec![("content-type".to_owned(), "application/json".to_owned())];
+    headers.extend(d.credential(cfg)?);
+    if !req.media.is_empty() {
+        headers.extend(d.media_headers.iter().cloned());
+    }
+    let mut http = HttpRequest {
+        method: "POST",
+        url,
+        headers,
+        body,
+    };
+    apply_headers(&mut http, cfg)?;
+    Ok(http)
+}
+
+pub(crate) fn parse(
+    d: &Dialect,
+    req: &DecisionRequest,
+    res: &HttpResponse,
+) -> Result<DecisionResponse, Error> {
+    if let Some(reason) = d.blocked(res) {
+        return Ok(refused(req, None, None, Some(reason)));
+    }
+    if !(200..300).contains(&res.status) {
+        return Err(http_error(res));
+    }
+    let bad = |m: String| Error {
+        status: Some(res.status),
+        ..Error::new(ErrorCode::BadResponse, m)
+    };
+    let v: Value = serde_json::from_slice(&res.body)
+        .map_err(|e| bad(safe_serde_message("response body", &e)))?;
+    let mut reply: Reply = serde_json::from_value(d.unwrap_envelope(v))
+        .map_err(|e| bad(safe_serde_message("response body", &e)))?;
+    let input_tokens = reply.usage.take().and_then(|u| u.input_tokens);
+
+    // Input blocked by a safety filter: nothing was evaluated.
+    if let Some(f) = reply.prompt_feedback.take() {
+        if let Some(reason) = f.block_reason {
+            let reason = f.block_reason_message.unwrap_or(reason);
+            return Ok(refused(req, reply.model, input_tokens, Some(reason)));
+        }
     }
 
-    fn parse(&self, req: &DecisionRequest, res: &HttpResponse) -> Result<DecisionResponse, Error> {
-        if self.preset == Preset::Gemini && res.status == 400 {
-            if let Some(reason) = gemini::blocked_by_error(&res.body) {
-                return Ok(refused(req, None, None, Some(reason)));
+    let mut answers = BTreeMap::new();
+    for (id, q) in &req.questions {
+        let raw = reply
+            .answers
+            .remove(id)
+            .ok_or_else(|| bad(format!("missing answer `{id}`")))?;
+        let missing = |f: &str| bad(format!("answer `{id}` missing `{f}`"));
+        let answer = match q {
+            Question::YesNo { .. } => Answer::YesNo {
+                probability: raw.noul.ok_or_else(|| missing("noul"))?,
+            },
+            Question::Choice { .. } => {
+                let choice = raw.choice.ok_or_else(|| missing("choice"))?;
+                let (confidence, confidence_source) =
+                    confidence(raw.confidence, raw.probabilities.get(&choice).copied());
+                Answer::Choice {
+                    choice,
+                    confidence,
+                    confidence_source,
+                    probabilities: raw.probabilities,
+                }
             }
-        }
-        if !(200..300).contains(&res.status) {
-            return Err(http_error(res));
-        }
-        let bad = |m: String| Error {
-            status: Some(res.status),
-            ..Error::new(ErrorCode::BadResponse, m)
+            Question::Score { levels, .. } => {
+                // Providers key probabilities by 0-based level index.
+                let probabilities: BTreeMap<Id, f32> = levels
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, l)| {
+                        Some((l.id.clone(), *raw.probabilities.get(&i.to_string())?))
+                    })
+                    .collect();
+                let top = probabilities.values().copied().reduce(f32::max);
+                let (confidence, confidence_source) = confidence(raw.confidence, top);
+                Answer::Score {
+                    value: raw.score.ok_or_else(|| missing("score"))?,
+                    confidence,
+                    confidence_source,
+                    probabilities,
+                }
+            }
         };
-        let mut reply: Reply = serde_json::from_slice(&res.body)
-            .map_err(|e| bad(safe_serde_message("response body", &e)))?;
-        if let Some(inner) = reply.result.take() {
-            reply = *inner;
-        }
-        let input_tokens = reply.usage.take().and_then(|u| u.input_tokens);
-
-        // Input blocked by a safety filter: nothing was evaluated.
-        if let Some(f) = reply.prompt_feedback.take() {
-            if let Some(reason) = f.block_reason {
-                let reason = f.block_reason_message.unwrap_or(reason);
-                return Ok(refused(req, reply.model, input_tokens, Some(reason)));
-            }
-        }
-
-        let mut answers = BTreeMap::new();
-        for (id, q) in &req.questions {
-            let raw = reply
-                .answers
-                .remove(id)
-                .ok_or_else(|| bad(format!("missing answer `{id}`")))?;
-            let missing = |f: &str| bad(format!("answer `{id}` missing `{f}`"));
-            let answer = match q {
-                Question::YesNo { .. } => Answer::YesNo {
-                    probability: raw.noul.ok_or_else(|| missing("noul"))?,
-                },
-                Question::Choice { .. } => {
-                    let choice = raw.choice.ok_or_else(|| missing("choice"))?;
-                    let (confidence, confidence_source) =
-                        confidence(raw.confidence, raw.probabilities.get(&choice).copied());
-                    Answer::Choice {
-                        choice,
-                        confidence,
-                        confidence_source,
-                        probabilities: raw.probabilities,
-                    }
-                }
-                Question::Score { levels, .. } => {
-                    // Providers key probabilities by 0-based level index.
-                    let probabilities: BTreeMap<Id, f32> = levels
-                        .iter()
-                        .enumerate()
-                        .filter_map(|(i, l)| {
-                            Some((l.id.clone(), *raw.probabilities.get(&i.to_string())?))
-                        })
-                        .collect();
-                    let top = probabilities.values().copied().reduce(f32::max);
-                    let (confidence, confidence_source) = confidence(raw.confidence, top);
-                    Answer::Score {
-                        value: raw.score.ok_or_else(|| missing("score"))?,
-                        confidence,
-                        confidence_source,
-                        probabilities,
-                    }
-                }
-            };
-            answers.insert(id.clone(), answer);
-        }
-        Ok(DecisionResponse {
-            model: reply.model,
-            answers,
-            input_tokens,
-            probability_source: ProbabilitySource::Provider,
-            block_reason: None,
-        })
+        answers.insert(id.clone(), answer);
     }
+    Ok(DecisionResponse {
+        model: reply.model,
+        answers,
+        input_tokens,
+        probability_source: ProbabilitySource::Provider,
+        block_reason: None,
+    })
 }
 
 /// Every question refused: the input was blocked, nothing was evaluated.

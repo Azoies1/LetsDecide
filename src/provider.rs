@@ -1,5 +1,5 @@
 use crate::error::{Details, Reason};
-use crate::{Capabilities, DecisionRequest, DecisionResponse, Error, ErrorCode, OpenAi, SystemOne};
+use crate::{Capabilities, DecisionRequest, DecisionResponse, Dialect, Error, ErrorCode};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
@@ -88,11 +88,9 @@ pub trait Provider {
 /// these names unless asked to [`replace`](Registry::replace).
 pub const BUILTIN: [&str; 5] = ["jev", "clef", "gemini", "openai", "systemone"];
 
+/// Every built-in is a [`Dialect`] (`spec/dialects/*.json`).
 fn builtin(name: &str) -> Option<Box<dyn Provider + Send + Sync>> {
-    match name {
-        "openai" => Some(Box::new(OpenAi)),
-        _ => SystemOne::preset(name).map(|p| Box::new(p) as Box<dyn Provider + Send + Sync>),
-    }
+    Dialect::builtin(name).map(|d| Box::new(d) as Box<dyn Provider + Send + Sync>)
 }
 
 /// `"provider/model"` → `("provider", "model")`.
@@ -132,8 +130,11 @@ pub fn resolve(model_ref: &str) -> Result<(Box<dyn Provider>, &str), Error> {
 /// # use letsdecide::*;
 /// let mut providers = Registry::builtin();
 /// // A custom provider is any `Provider`; here a System One preset stands in.
-/// providers.register("acme", SystemOne::preset("systemone").unwrap()).unwrap();
-/// assert!(providers.register("openai", OpenAi).is_err()); // taken
+/// // A dialect: Jev's shape at another path, with a different key header.
+/// let acme = Dialect::from_json(r#"{ "extends": "jev", "base_url": "https://api.acme.test",
+///     "path": "/v2/decide", "auth": { "header": "x-api-key", "scheme": "raw" } }"#).unwrap();
+/// providers.register("acme", acme.clone()).unwrap();
+/// assert!(providers.register("openai", acme).is_err()); // taken
 /// ```
 pub struct Registry {
     providers: BTreeMap<String, Box<dyn Provider + Send + Sync>>,
@@ -304,35 +305,6 @@ pub(crate) fn encode<T: Serialize>(body: &T, req: &DecisionRequest) -> Result<Ve
         obj.insert(k.clone(), x.clone());
     }
     serde_json::to_vec(&v).map_err(|e| invalid(e.to_string()))
-}
-
-/// Shared by adapters: JSON POST, key as `Bearer` or raw in a custom header.
-/// Adapters call [`apply_headers`] last.
-pub(crate) fn post(
-    url: String,
-    key_header: &str,
-    bearer: bool,
-    cfg: &Config,
-    body: Vec<u8>,
-) -> HttpRequest {
-    let mut headers = vec![("content-type".to_owned(), "application/json".to_owned())];
-    let credential = if bearer {
-        cfg.access_token
-            .as_ref()
-            .or(cfg.api_key.as_ref())
-            .map(|t| format!("Bearer {t}"))
-    } else {
-        cfg.api_key.clone()
-    };
-    if let Some(value) = credential {
-        headers.push((key_header.to_owned(), value));
-    }
-    HttpRequest {
-        method: "POST",
-        url,
-        headers,
-        body,
-    }
 }
 
 /// Appends `cfg.headers`, replacing same-named ones. Public for custom

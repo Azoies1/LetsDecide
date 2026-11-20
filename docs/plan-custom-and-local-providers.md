@@ -1,6 +1,6 @@
 # Plan: custom providers and local models
 
-Status: **in progress**. P1 and P2 are built; P3 onward are planned. Decisions below
+Status: **in progress**. P1, P2 and P3 are built; P4 onward are planned. Decisions below
 are recorded as ADRs 0008–0013 in [adr/](adr/README.md) and summarised in
 [design.md](design.md); open items are in [future-work.md](future-work.md).
 
@@ -344,7 +344,7 @@ change, fixtures, no silent degradation).
 |---|---|---|
 | **P1** ✅ | Core: `Registry`, `Capabilities` (built-ins migrated from `Limits`), `DecisionResponse::check`, `Config.headers/options`, JSON entry points `validate`/`check`/`classify_http` | Built-ins pass unchanged fixtures; a Rust test registers a custom provider; `check` rejects every malformed-response fixture |
 | **P2** ✅ | Host providers: JS and Python accept `providers` (codecs) and `engines`; built-in `mock/` engine; **conformance kit** (`checkProvider(provider, fixtures)`) reusing the golden fixture format; guide `docs/custom-providers.md` | A sample `acme` codec passes the kit in JS and Python; middleware works over it |
-| **P3** | Dialects for `systemone` and `openai` families | Jev, Clef, Gemini presets re-expressed as dialects produce byte-identical fixtures |
+| **P3** ✅ | Dialects for `systemone` and `openai` families | Jev, Clef, Gemini presets re-expressed as dialects produce byte-identical fixtures |
 | **P4** | Local scorer in core (`score_plan`/`score_answers`), golden fixtures from recorded log-probs; `letsdecide-serve` sidecar over llama.cpp server and an OpenAI-compatible (vLLM) backend | `systemone/<local-model>` works from JS and Python against the sidecar; scorer fixtures cover all three question kinds and the label limit |
 | **P5** | In-process engines: Python (llama-cpp-python), JS (transformers.js); `escalate` and capability-aware `fallback` middleware (`shadow` already ships) | Scenario 16 (local, escalate to cloud) runs end-to-end in an example |
 | **P6** | Engine slots, `headers`/`options` and error `details` in the Swift and Kotlin clients (the UniFFI bindings already ship); reference engines for llama.cpp (iOS/Android) and ONNX NLI | Example iOS and Android apps answer a yes/no offline |
