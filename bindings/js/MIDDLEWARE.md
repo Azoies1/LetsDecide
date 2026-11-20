@@ -62,7 +62,7 @@ const decide = compose(client, calibrate({ spam: f }));
   models at once and returns every result keyed by model: `{ response }`,
   `{ error }`, `{ skipped: true }` (can't take the request) or
   `{ timedOut: true }`, plus `ms`. Members are `"provider/model"` or
-  `{ model, enabled?, questions? }`. Nothing is merged. Not a middleware
+  `{ model, enabled? }`; all get the same request. Nothing is merged. Not a middleware
   itself, but it takes any composed `decide`. See
   [docs/concurrent-models.md](../../docs/concurrent-models.md).
 

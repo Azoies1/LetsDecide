@@ -17,8 +17,8 @@ const decide = compose(client, retry()); // middleware applies per model
 
 const results = await fanOut(decide, request, [
   "jev/jev-latest",
-  { model: "gemini/gemini-decision-1", questions: ["nsfw"] }, // routing
-  { model: "openai/gpt-6-luna", enabled: false },             // switched off
+  "gemini/gemini-decision-1",
+  { model: "openai/gpt-6-luna", enabled: false }, // switched off
 ], { timeoutMs: 3000 });
 
 results["jev/jev-latest"]; // { response, ms } | { error, ms } | { skipped: true, ms } | { timedOut: true, ms }
@@ -32,9 +32,8 @@ results = await fan_out(client.decide, request, ["jev/jev-latest", "gemini/gemin
 
 | Option | Meaning |
 |---|---|
-| `members` | `"provider/model"` strings or `{ model, enabled?, questions? }`. Plain data: read it from your own config or flags on every call to toggle models live |
+| `members` | `"provider/model"` strings or `{ model, enabled? }`. Every model gets the same request. Plain data: read it from your own config or flags on every call to toggle models live |
 | `enabled: false` | The model is not called and does not appear in the results |
-| `questions` | Routing: that model gets a request with only these questions. Without it, a model gets all of them |
 | `timeoutMs` / `timeout_ms` | Deadline for the whole call. Models still running are aborted and reported as `timedOut` |
 | `signal` (JS) | The caller's abort is thrown, not reported. In Python, cancel the task |
 
@@ -44,8 +43,7 @@ results = await fan_out(client.decide, request, ["jev/jev-latest", "gemini/gemin
   with more than 64 questions) is reported as `skipped`. The client raises
   `Unsupported` before any network call, so a skip costs nothing.
 - **Bad member lists fail before any call** (`RangeError` in JS, `ValueError`
-  in Python): an empty list, a model listed twice, an unknown or empty
-  `questions` list, or a question no model is asked.
+  in Python): no enabled models, or a model listed twice.
 - **It's built on `decide`,** so it works with `client.decide` or any composed
   middleware stack, and with custom providers and engines.
 - **Keys:** credentials exist only per provider (`byProvider`), so one model's
@@ -54,6 +52,15 @@ results = await fan_out(client.decide, request, ["jev/jev-latest", "gemini/gemin
   the other middleware.
 - **Need the fastest single answer?** Use `hedge({ delayMs: 0, models })`
   instead.
+
+## Different questions per model
+
+`fanOut` sends every model the same request. To ask a model only some
+questions, build that request yourself:
+
+```js
+const nsfw = await decide("gemini/gemini-decision-1", { ...request, questions: { nsfw: request.questions.nsfw } });
+```
 
 ## Combining answers yourself
 
@@ -79,4 +86,5 @@ An earlier version merged answers in the core (weighted vote, mean, quorum,
   providers".
 - Nobody needed it yet.
 
-If a real need appears, it can return as a separate package.
+Per-question routing was removed for the same reason: it is a few lines in the
+app. If a real need appears, either can return as a separate package.

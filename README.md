@@ -259,8 +259,8 @@ import { fanOut } from "letsdecide";
 
 const results = await fanOut(decide, request, [
   "jev/jev-latest",
-  { model: "gemini/gemini-decision-1", questions: ["nsfw"] }, // only this question
-  { model: "openai/gpt-6-luna", enabled: false },             // switched off
+  "gemini/gemini-decision-1",
+  { model: "openai/gpt-6-luna", enabled: false }, // switched off
 ], { timeoutMs: 3000 });
 results["jev/jev-latest"]; // { response } | { error } | { skipped } | { timedOut }, plus ms
 ```

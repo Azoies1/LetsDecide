@@ -339,24 +339,18 @@ export function observe({ onStart, onEnd, onError, now = () => performance.now()
  * Asks several models the same request at once and returns every result, keyed by model, in
  * member order. Nothing is merged: combining answers is the app's choice. `decide`: `client.decide`
  * or a composed one (so `retry` etc. apply per member). `members`: `"provider/model"` strings or
- * `{ model, enabled?, questions? }`; `questions` sends that member only those questions.
+ * `{ model, enabled? }`. Every member gets the same request.
  * Each result is `{ response }`, `{ error }`, `{ skipped: true }` (the member can't take the
  * request: `Unsupported`, raised before any network call) or `{ timedOut: true }`, plus `ms`.
  */
 export async function fanOut(decide, request, members, { timeoutMs, signal } = {}) {
   const active = members.map((m) => (typeof m === "string" ? { model: m } : m)).filter((m) => m.enabled !== false);
-  const asked = Object.keys(request.questions);
   if (!active.length) throw new RangeError("fanOut: no enabled members");
   const seen = new Set();
   for (const m of active) {
     if (seen.has(m.model)) throw new RangeError(`fanOut: \`${m.model}\` is listed twice`);
     seen.add(m.model);
-    if (m.questions && (!m.questions.length || m.questions.some((q) => !asked.includes(q)))) {
-      throw new RangeError(`fanOut: \`${m.model}\`: \`questions\` must list questions of the request`);
-    }
   }
-  const uncovered = asked.find((q) => !active.some((m) => !m.questions || m.questions.includes(q)));
-  if (uncovered) throw new RangeError(`fanOut: no member is asked \`${uncovered}\``);
   signal?.throwIfAborted();
 
   // One controller stops every member: on the caller's signal or at the deadline. Members
@@ -369,11 +363,8 @@ export async function fanOut(decide, request, members, { timeoutMs, signal } = {
   const timer = timeoutMs != null ? setTimeout(() => ctrl.abort(), timeoutMs) : undefined;
   const run = async (m) => {
     const t0 = Date.now();
-    const req = m.questions
-      ? { ...request, questions: Object.fromEntries(m.questions.map((q) => [q, request.questions[q]])) }
-      : request;
     try {
-      const response = await Promise.race([decide(m.model, req, { signal: ctrl.signal }), stopped]);
+      const response = await Promise.race([decide(m.model, request, { signal: ctrl.signal }), stopped]);
       if (response !== STOPPED) return { response, ms: Date.now() - t0 };
       if (signal?.aborted) throw signal.reason;
       return { timedOut: true, ms: Date.now() - t0 };

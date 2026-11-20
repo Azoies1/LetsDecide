@@ -75,8 +75,8 @@ export function observe(hooks?: {
   now?: () => number;
 }): Middleware;
 
-/** One model in a `fanOut`. `questions`: send it only these question ids (default: all). */
-export type FanOutMember = string | { model: string; enabled?: boolean; questions?: string[] };
+/** One model in a `fanOut`. */
+export type FanOutMember = string | { model: string; enabled?: boolean };
 
 /** What happened to one member. `skipped`: it can't take the request (`Unsupported`, no call made). */
 export type FanOutResult = (

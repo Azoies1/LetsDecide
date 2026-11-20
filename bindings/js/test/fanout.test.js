@@ -46,17 +46,6 @@ test("disabled members are not called", async () => {
   assert.deepEqual(Object.keys(out), ["yes/a"]);
 });
 
-test("routing sends each member only its questions", async () => {
-  const seen = {};
-  const spy = (name) => ({ async decide(m, r, o) { seen[name] = Object.keys(r.questions); return says(0.5).decide(m, r, o); } });
-  const out = await fanOut(decide(client({ a: spy("a"), b: spy("b") })), request, [
-    { model: "a/x", questions: ["billing"] },
-    { model: "b/x", questions: ["team"] },
-  ]);
-  assert.deepEqual(seen, { a: ["billing"], b: ["team"] });
-  assert.deepEqual(Object.keys(out["a/x"].response.answers), ["billing"]);
-});
-
 test("timeoutMs returns what arrived and aborts the rest", async () => {
   const t0 = Date.now();
   const out = await fanOut(decide(client()), request, ["yes/a", "slow/b"], { timeoutMs: 50 });
@@ -87,9 +76,6 @@ test("bad member lists throw before any call", async () => {
     [],
     [{ model: "spy/a", enabled: false }],
     ["spy/a", "spy/a"],
-    [{ model: "spy/a", questions: ["nope"] }],
-    [{ model: "spy/a", questions: [] }],
-    [{ model: "spy/a", questions: ["billing"] }], // nobody is asked `team`
   ]) {
     await assert.rejects(fanOut(d, request, members), RangeError);
   }

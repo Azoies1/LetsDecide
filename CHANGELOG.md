@@ -9,8 +9,8 @@ All notable changes to this project are documented here. The format follows
 ### Added
 - `fanOut` (JS) and `fan_out` (Python middleware): ask several models the same
   request at once and get every raw result back, keyed by model. Supports
-  per-model `enabled`, per-question routing (`questions`), a deadline, and any
-  composed `decide`. Nothing is merged. See `docs/concurrent-models.md`.
+  per-model `enabled`, a deadline, and any composed `decide`. Nothing is
+  merged. See `docs/concurrent-models.md`.
 - Custom engines' extra response fields are now kept after the response check.
 - Kotlin and Swift bindings over UniFFI (`bindings/uniffi`, `bindings/kotlin`, `bindings/swift`).
 - Middleware (JS and async Python): `hedge`, `split`, `shadow` + `compare`,

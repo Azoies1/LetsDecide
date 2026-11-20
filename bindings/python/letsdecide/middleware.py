@@ -408,14 +408,12 @@ async def fan_out(decide: Decide, request: dict, members: list, *, timeout_ms=No
     keyed by model, in member order. Nothing is merged: combining answers is
     the app's choice. `decide`: `AsyncClient.decide` or a composed one (so
     `retry` etc. apply per member). `members`: `"provider/model"` strings or
-    `{"model", "enabled"?, "questions"?}`; `questions` sends that member only
-    those questions. Each result is `{"response"}`, `{"error"}`,
+    `{"model", "enabled"?}`. Every member gets the same request. Each result is `{"response"}`, `{"error"}`,
     `{"skipped": True}` (the member can't take the request: `Unsupported`,
     raised before any network call) or `{"timed_out": True}`, plus `ms`. Bad
     member lists raise `ValueError` before any call."""
     active = [{"model": m} if isinstance(m, str) else m for m in members]
     active = [m for m in active if m.get("enabled", True)]
-    asked = request["questions"]
     if not active:
         raise ValueError("fan_out: no enabled members")
     seen = set()
@@ -423,19 +421,11 @@ async def fan_out(decide: Decide, request: dict, members: list, *, timeout_ms=No
         if m["model"] in seen:
             raise ValueError(f"fan_out: `{m['model']}` is listed twice")
         seen.add(m["model"])
-        qs = m.get("questions")
-        if qs is not None and (not qs or any(q not in asked for q in qs)):
-            raise ValueError(f"fan_out: `{m['model']}`: `questions` must list questions of the request")
-    for q in asked:
-        if not any(m.get("questions") is None or q in m["questions"] for m in active):
-            raise ValueError(f"fan_out: no member is asked `{q}`")
 
     async def run(m):
-        qs = m.get("questions")
-        req = request if qs is None else {**request, "questions": {q: asked[q] for q in qs}}
         t0 = time.perf_counter()
         try:
-            out = {"response": await decide(m["model"], req)}
+            out = {"response": await decide(m["model"], request)}
         except Exception as e:  # noqa: BLE001 - every failure is reported, not raised
             out = {"skipped": True} if getattr(e, "code", None) == "Unsupported" else {"error": e}
         out["ms"] = round((time.perf_counter() - t0) * 1000)

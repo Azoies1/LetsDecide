@@ -57,15 +57,11 @@ async def test_every_raw_result_in_member_order():
     assert all(isinstance(r["ms"], int) for r in out.values())
 
 
-async def test_disabled_and_routing():
-    a, b = Spy(), Spy()
-    out = await fan_out(
-        client(a=a, b=b).decide,
-        REQUEST,
-        [{"model": "a/x", "questions": ["billing"]}, {"model": "b/x", "questions": ["team"]}, {"model": "yes/c", "enabled": False}],
-    )
-    assert (a.seen, b.seen) == (["billing"], ["team"])
-    assert list(out) == ["a/x", "b/x"]
+async def test_disabled_members_are_not_called():
+    spy = Spy()
+    out = await fan_out(client(spy=spy).decide, REQUEST, ["yes/a", {"model": "spy/b", "enabled": False}])
+    assert spy.seen is None
+    assert list(out) == ["yes/a"]
 
 
 async def test_timeout_returns_what_arrived():
@@ -101,9 +97,6 @@ async def test_composed_middleware_per_member():
         [],
         [{"model": "yes/a", "enabled": False}],
         ["yes/a", "yes/a"],
-        [{"model": "yes/a", "questions": ["nope"]}],
-        [{"model": "yes/a", "questions": []}],
-        [{"model": "yes/a", "questions": ["billing"]}],
     ],
 )
 async def test_bad_member_lists_raise_before_any_call(members):
