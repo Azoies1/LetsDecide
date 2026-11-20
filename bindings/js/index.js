@@ -278,7 +278,8 @@ export class Client {
       }
     }
     try {
-      return unwrap(core.check(JSON.stringify(request), JSON.stringify(out)));
+      // Checked fields win; extra fields an engine adds are kept, unchecked.
+      return { ...out, ...unwrap(core.check(JSON.stringify(request), JSON.stringify(out))) };
     } catch (e) {
       throw tag(e);
     }

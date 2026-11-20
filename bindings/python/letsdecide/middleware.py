@@ -31,6 +31,7 @@ __all__ = [
     "fit_isotonic",
     "brier_score",
     "observe",
+    "fan_out",
 ]
 
 
@@ -400,3 +401,44 @@ def observe(*, on_start=None, on_end=None, on_error=None, now=time.perf_counter)
         return decide
 
     return mw
+
+
+async def fan_out(decide: Decide, request: dict, members: list, *, timeout_ms=None) -> dict:
+    """Asks several models the same request at once and returns every result,
+    keyed by model, in member order. Nothing is merged: combining answers is
+    the app's choice. `decide`: `AsyncClient.decide` or a composed one (so
+    `retry` etc. apply per member). `members`: `"provider/model"` strings or
+    `{"model", "enabled"?}`. Every member gets the same request. Each result is `{"response"}`, `{"error"}`,
+    `{"skipped": True}` (the member can't take the request: `Unsupported`,
+    raised before any network call) or `{"timed_out": True}`, plus `ms`. Bad
+    member lists raise `ValueError` before any call."""
+    active = [{"model": m} if isinstance(m, str) else m for m in members]
+    active = [m for m in active if m.get("enabled", True)]
+    if not active:
+        raise ValueError("fan_out: no enabled members")
+    seen = set()
+    for m in active:
+        if m["model"] in seen:
+            raise ValueError(f"fan_out: `{m['model']}` is listed twice")
+        seen.add(m["model"])
+
+    async def run(m):
+        t0 = time.perf_counter()
+        try:
+            out = {"response": await decide(m["model"], request)}
+        except Exception as e:  # noqa: BLE001 - every failure is reported, not raised
+            out = {"skipped": True} if getattr(e, "code", None) == "Unsupported" else {"error": e}
+        out["ms"] = round((time.perf_counter() - t0) * 1000)
+        return out
+
+    tasks = [asyncio.ensure_future(run(m)) for m in active]
+    try:
+        done, _ = await asyncio.wait(tasks, timeout=None if timeout_ms is None else timeout_ms / 1000)
+    finally:
+        for t in tasks:
+            t.cancel()  # late members, or all of them if the caller cancelled
+    return {
+        m["model"]: t.result() if t in done else {"timed_out": True, "ms": timeout_ms}
+        for m, t in zip(active, tasks)
+    }
+
