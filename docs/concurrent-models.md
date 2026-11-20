@@ -3,195 +3,162 @@
 Status: **plan, not built.** Ask several decision models the same request at
 once, turn each on or off, and set a few rules for how their answers combine.
 
+Agreed with the custom-providers work
+([plan-custom-and-local-providers.md](plan-custom-and-local-providers.md),
+P1 = PR #6, P2 next). This builds on its engines, `Capabilities`, `check` and
+error `details`, and adds no new extension mechanism.
+
 ## The idea in one line
 
-A **panel** is a named group of models that you call like a single model:
+A **panel** is an engine that fans one request out to several models. You
+register it under any name and call it like any other model:
 
 ```js
-await decide("panel/moderation", request); // same call as "jev/jev-latest"
+const client = new Client(config, {
+  engines: { panel: panelEngine({ moderation: { /* see below */ } }) },
+});
+await client.decide("panel/moderation", request); // same call as "jev/jev-latest"
 ```
 
 This keeps the library's promise that you switch with one string. Going from
 one model to an ensemble is a config change. Your call sites stay the same.
 
-## What exists vs. what's missing
+`panel` is a suggested name, not a reserved prefix. That follows the registry
+rule D1 (free names, an error on a clash).
 
-| Need | Today | Gap |
-|---|---|---|
-| Call N models | `fallback` (one after another) | No parallel fan-out |
-| Different key per provider | `Client` has one `api_key` | **Blocker**: needs a key per provider |
-| Combine answers | none | Pure logic, so it belongs in the core |
-| Cancel the losers | `opts.signal` is threaded through | Needs a child `AbortController` per member |
+## What it reuses
 
-## Design
+| Need | Provided by |
+|---|---|
+| Validate the request, check each response | Engine slot (P2): the core runs `validate` before and `check` after |
+| Call member models | `opts.decide`, the client's own re-entrant `decide`, passed to engines (P2), with a nesting-depth guard so a panel can't call itself forever |
+| Skip members that can't take the request | `client.capabilities(model)` + core `validate(request, caps)` |
+| A key per provider | `byProvider` in client config (P2) |
+| Cascade / escalation | `escalate({ to, when })` middleware (P5). Not a panel mode |
+| Latency hedging, shadow, pairwise `compare` | Already on main |
 
-### 1. Split: pure merge in the core, fan-out in the bindings
+What's new here: the panel engine, `src/merge.rs`, and its tests.
 
-This follows the existing sans-IO rule:
+## Panel config
 
-- **Core (Rust):** `merge(request, [(model, response | error, weight)], rules)` returns
-  a merged response plus agreement data. It is pure, has golden tests, and every
-  binding gets it for free through `json::merge`.
-- **Bindings (JS first, then Python):** `panel(...)` middleware sends the calls
-  concurrently (`Promise.allSettled` / `asyncio.gather`) and passes the results to `merge`.
-
-### 2. Config is plain data, never functions
-
-Because the config is plain data, it can come from a JSON file, an environment
-variable or a feature-flag service, and you can change it at runtime without a deploy.
+Plain data, so it can come from a JSON file or a feature-flag service. It
+never holds keys.
 
 ```json
 {
-  "panels": {
-    "moderation": {
-      "mode": "vote",
-      "members": [
-        { "model": "jev/jev-latest" },
-        { "model": "gemini/gemini-decision-1", "weight": 2 },
-        { "model": "openai/gpt-6-luna", "enabled": false }
-      ],
-      "rules": { "quorum": 2, "timeout_ms": 3000, "on_disagree": "flag" }
-    }
+  "moderation": {
+    "mode": "vote",
+    "members": [
+      { "model": "jev/jev-latest" },
+      { "model": "gemini/gemini-decision-1", "weight": 2 },
+      { "model": "openai/gpt-6-luna", "enabled": false }
+    ],
+    "rules": { "quorum": 2, "timeout_ms": 3000, "on_disagree": "flag" }
   }
 }
 ```
 
-Panel config never holds keys: it's meant to live in files and flag
-services. Keys go on the `Client` (see [Keys](#keys)).
-
 - **On/off:** set `enabled: false` on a member. A panel with one enabled member
-  behaves exactly like calling that model directly, so concurrency is off.
-- **Per-model settings:** `weight`, `timeout_ms`, plus an optional `config`
-  override (`base_url`, `account_id`).
-- **Live toggles:** `panel()` accepts either an object or a getter
-  `() => config`, and reads it on every call.
+  behaves exactly like calling that model directly.
+- **Live toggles:** `panelEngine(cfg)` takes the object or a getter
+  `() => cfg`, and reads it on every call.
+- **Per member:** `weight`, `timeout_ms`.
 
-### 3. Modes (four, no more)
+## Modes
 
-| Mode | Behaviour | Typical use |
+| Mode | Behaviour | Capabilities of the panel |
 |---|---|---|
-| `all` | Waits for every member and returns each raw response | Comparing models, debugging |
-| `race` | Returns the first success and aborts the rest | Lower latency (hedging) |
-| `vote` | Waits for members, merges answers per question | Accuracy, robustness |
-| `cascade` | Calls members in order and stops once the answer is confident | Accuracy at close to single-model cost |
+| `vote` (default) | Waits for members, merges answers per question | Intersection of the enabled members' capabilities |
+| `all` | Returns every member's raw response; the answer comes from the first member | Intersection |
+| `race` | First success wins; the others are aborted | Union, minus members that can't take the request |
 
-`shadow` (answer from the primary, others in the background for evaluation) is
-`all` with a primary member. It lands with M5.
-
-### 4. Rules (a small fixed set, not a DSL)
+## Rules (a fixed set, not a DSL)
 
 | Rule | Meaning | Default |
 |---|---|---|
 | `quorum` | Minimum successful members, else throw the last error | `1` |
 | `timeout_ms` | Panel deadline; merge whatever has arrived | none |
-| `on_disagree` | `flag` (mark it in output) · `error` · `primary` (use the first member) | `flag` |
-| `escalate_below` | `cascade` only: call the next member when the margin is under this | `0.8` |
+| `on_disagree` | `flag` (marked in the output) · `error` · `primary` (use the first member) | `flag` |
 
-Members that return `Unsupported` (for example Clef with more than 64
-questions) are **skipped and recorded**. They do not count as failures, which
-matches how `fallback` already treats them.
+Members skipped by capabilities are recorded in `res.panel` and don't count
+toward quorum.
 
-### 5. Merging honestly
+## Merging (`src/merge.rs`, pure)
 
-The library's own non-goal says confidence can't be compared across providers,
-so the **default vote is scale-free**:
+`merge(request, [(member, response | error, weight)], rules)`:
 
-- `yesno`: majority of `p >= 0.5`. The merged `probability` is the weighted
-  share of yes votes.
-- `choice` / `score`: weighted majority of the argmax option or level id. Ids are
-  yours, so they compare across providers. Score `value` is never averaged,
-  because OpenAI and the System One family use different scales.
+- Runs `DecisionResponse::check` on every member first, even if the app ever
+  opts out of checking the final response.
+- **Default vote, scale-free.** Yes/no: weighted majority of `p >= 0.5`.
+  Choice and score: weighted majority of the top option or level id. Ids are
+  the caller's, so they compare across providers. Score `value` is never
+  averaged. This is valid across any `probability_source`.
+- **`merge: "mean"` is opt-in.** If members have different `probability_source`
+  values (`provider`, `logprob`, `nli`), it fails with `Unsupported`, reason
+  `mixed_probability_source`. It refuses rather than warns, because averaging
+  numbers on different scales is the silent degradation ADR 0005 forbids.
 - `Refused` answers abstain, and a question where every member refused stays
   `Refused`.
-- Averaging probabilities is opt-in (`"merge": "mean"`) and documented as
-  "only meaningful within one provider family".
+- Errors use `Error::detailed`: `provider` = member prefix, `question` = id.
+  New `Reason` variants: `mixed_probability_source`, `below_quorum`,
+  `members_disagree`.
 
-### 6. Output stays a `DecisionResponse`
+## Output stays a `DecisionResponse`
 
 ```js
 res.answers.flagged          // merged answer, same shape as one model
 res.agreement.flagged        // 0..1, weighted share that agreed with the winner
 res.disagreed                // ["flagged"] when on_disagree = "flag"
-res.panel["jev/jev-latest"]  // raw response or { error }, ms elapsed
+res.panel["jev/jev-latest"]  // raw response, { error }, or { skipped: reason }, plus ms
 ```
 
-Because the shape is unchanged, everything downstream keeps working:
-`compose(client, panel(cfg), retry())` retries **each member** separately, and
-`fallback` can sit inside one member.
+Middleware composes as before: `compose(client, retry())` retries the panel
+as a whole, and retries inside a member come from the client the engine calls.
 
 ## Keys
 
-Most users should never write a key in code. The binding finds it in an
-environment variable named after the provider:
+Built in P2, host side only. ADR 0006 still holds: the library never reads env
+vars, and callers load keys themselves.
 
 ```js
-const client = new Client(); // server runtimes: reads env vars below
+new Client({
+  byProvider: {
+    jev: { apiKey: process.env.JEV_API_KEY },
+    gemini: { apiKey: () => vault.get("gemini") }, // resolved per call
+    acme: { headers: [["x-tenant", "t1"]], options: { region: "eu" } },
+  },
+});
 ```
 
-| Provider | Variables |
-|---|---|
-| `jev` | `JEV_API_KEY` |
-| `clef` | `CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID` |
-| `gemini` | `GEMINI_API_KEY` |
-| `openai` | `OPENAI_API_KEY` |
-| `systemone` | `SYSTEMONE_API_KEY`, `SYSTEMONE_BASE_URL` |
-
-For secret managers, rotation or short-lived tokens, pass a resolver. It is
-called once per request, and any caching is up to you:
-
-```js
-new Client({ keys: { jev: process.env.JEV_KEY, gemini: () => vault.get("gemini") } });
-```
-
-Each provider's key is looked up in this order:
-
-1. `keys[provider]`
-2. `apiKey`, legacy and single-provider only
-3. The environment variable
-
-Rules that keep this safe:
-
-- **A key only goes to its own provider.** With more than one provider in
-  play, `apiKey` alone is an `InvalidRequest`. A broadcast key would send your
-  Jev key to Google.
-- **A missing key fails before sending**, and the error names the variable to
-  set (never a value).
-- **Env vars are read by the bindings, never by the core.** The core keeps no
-  globals. Browsers and edge runtimes don't read env vars: call through your
-  backend.
-- **Keys are redacted** in `Debug`, `repr`, `toString` and errors, as `Config` already does.
-- A `systemone` member pointing at a second server sets its key through the
-  member's `config` override.
+- Each entry is merged over the top-level fields **for that provider only**.
+  Custom codecs receive their merged slice as `config`.
+- **A key only goes to its own provider.** A panel with members from more than
+  one provider and only top-level credentials fails with `InvalidRequest`
+  (reason `missing_config`, field `byProvider`), so a Jev key is never sent
+  to Google.
 
 ## Plan
 
-Each step can ship and be useful on its own.
+1. **P2 (custom-providers session):** the `{ signal, decide }` engine option
+   with a depth guard, `client.capabilities(model)` and `byProvider`.
+2. **Core `merge.rs`** with the new reasons. Golden tests: unanimous, split,
+   all refused, mixed `probability_source` under `mean`, below quorum, a
+   malformed member.
+3. **`panelEngine` in JS:** the three modes, enabled flags, getter config,
+   abort of losers, the capability skip.
+4. **Python parity** (`AsyncClient`).
 
-1. **Keys per provider**: `keys` map, resolvers and env vars (see [Keys](#keys)), falling back to
-   `apiKey`. Small, and needed for everything else. JS and Python.
-2. **`panel` middleware in JS with `all` and `race`**, `enabled` flags, getter
-   config, and abort of losers. No core change yet.
-3. **Core `merge` and `vote` mode** with `quorum`, `on_disagree`, `agreement`.
-   Golden tests: unanimous, split, all refused, one `Unsupported`, below quorum.
-4. **`cascade`** with `escalate_below` (it reuses `merge`).
-5. **Python parity** for steps 2–4 (`AsyncClient` only; sync gets `all`
-   sequentially, or nothing).
-6. **`shadow`**, folded into M5 evaluation.
-
-Rough size: core about 120 lines (`src/merge.rs`), JS about 80 lines, docs and tests.
+Rough size: core about 120 lines, JS about 80, plus docs and tests.
 
 ## Deliberately not doing
 
-- A general rule engine or expression language. Four rules cover the cases
-  people actually have.
-- Learned or auto-tuned weights and calibration. That belongs to M5 and must
-  never be silent.
-- Cost-based routing. Add it with `spec/prices.json` if that ever exists.
+- `cascade` as a panel mode. `escalate` covers it.
+- A general rule engine, or learned or auto-tuned weights (calibration
+  belongs to M5 and must never be silent).
 - Concurrency inside the Rust core. It stays sans-IO.
+- A built-in or reserved `panel` prefix.
 
 ## Open questions
 
-- Default mode when `mode` is omitted: `vote`, or `all` as the least surprising?
 - Per-question routing (send question X only to Gemini): useful, or premature?
-- Should `cascade` measure "confident" as top-probability margin, or the
-  provider's `confidence` when present?
+- Should `all` mode exist, or is `vote` plus `res.panel` enough?
