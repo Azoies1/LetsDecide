@@ -36,6 +36,7 @@ fn ok(model: &str, weight: f32, r: DecisionResponse) -> Member {
     Member {
         model: model.into(),
         weight,
+        questions: None,
         outcome: Outcome::Answered(r),
     }
 }
@@ -176,11 +177,13 @@ fn below_quorum_keeps_the_members_error() {
             Member {
                 model: "gemini/b".into(),
                 weight: 1.0,
+                questions: None,
                 outcome: Outcome::Failed(limited),
             },
             Member {
                 model: "clef/c".into(),
                 weight: 1.0,
+                questions: None,
                 outcome: Outcome::Skipped,
             },
         ],
@@ -259,4 +262,106 @@ fn json_entry_point() {
     let both = json!([{ "model": "jev/a", "response": r, "skipped": true }]);
     let out: Value = serde_json::from_str(&json::merge(&request, &both.to_string(), "{}")).unwrap();
     assert_eq!(out["error"]["details"]["field"], "members");
+}
+
+/// `r` restricted to `qs`, as a routed member would answer.
+fn only(mut r: DecisionResponse, qs: &[&str]) -> DecisionResponse {
+    r.answers.retain(|k, _| qs.contains(&k.as_str()));
+    r
+}
+
+fn routed(model: &str, qs: &[&str], r: DecisionResponse) -> Member {
+    Member {
+        questions: Some(qs.iter().map(|q| q.to_string()).collect()),
+        ..ok(model, 1.0, only(r, qs))
+    }
+}
+
+#[test]
+fn routing_votes_only_where_routed() {
+    let m = merge(
+        &req(),
+        &[
+            routed("jev/a", &["flag"], res(0.9, "a", "low", "provider")),
+            routed(
+                "gemini/b",
+                &["topic", "sev"],
+                res(0.1, "b", "high", "provider"),
+            ),
+            ok("openai/c", 1.0, res(0.8, "a", "high", "provider")),
+        ],
+        &Rules::default(),
+    )
+    .unwrap();
+    assert_eq!(yes_p(&m), 1.0); // jev and openai; gemini wasn't asked
+    assert_eq!(m.disagreed, vec!["topic"]); // gemini b vs openai a
+    match &m.response.answers["topic"] {
+        Answer::Choice { choice, .. } => assert_eq!(choice, "b"), // tie: first voter
+        _ => panic!(),
+    }
+    m.response.check(&req()).unwrap();
+}
+
+#[test]
+fn routing_quorum_is_per_question() {
+    let down = Member {
+        questions: Some(vec!["flag".into()]),
+        ..Member {
+            model: "gemini/b".into(),
+            weight: 1.0,
+            questions: None,
+            outcome: Outcome::Failed(Error::new(ErrorCode::ProviderUnavailable, "x")),
+        }
+    };
+    let e = merge(
+        &req(),
+        &[
+            routed("jev/a", &["topic", "sev"], res(0.9, "a", "low", "provider")),
+            down,
+        ],
+        &Rules::default(),
+    )
+    .unwrap_err();
+    assert_eq!(e.code, ErrorCode::ProviderUnavailable);
+    let d = e.details.unwrap();
+    assert_eq!(d.reason, Reason::BelowQuorum);
+    assert_eq!(d.question.as_deref(), Some("flag"));
+    assert_eq!(d.provider.as_deref(), Some("gemini"));
+}
+
+#[test]
+fn routing_config_errors() {
+    let r = res(0.9, "a", "low", "provider");
+    // A question nobody is routed.
+    let e = merge(
+        &req(),
+        &[routed("jev/a", &["flag"], r.clone())],
+        &Rules::default(),
+    )
+    .unwrap_err();
+    let d = e.details.unwrap();
+    assert_eq!(
+        (d.field.as_deref(), d.question.as_deref()),
+        (Some("members"), Some("sev"))
+    );
+    // An unknown question id.
+    let mut bad = ok("jev/a", 1.0, r.clone());
+    bad.questions = Some(vec!["nope".into()]);
+    let e = merge(&req(), &[bad], &Rules::default()).unwrap_err();
+    assert_eq!(e.details.unwrap().field.as_deref(), Some("questions"));
+    // Answering a question it wasn't routed is a bad response.
+    let mut extra = routed("jev/a", &["flag"], r.clone());
+    extra.outcome = Outcome::Answered(r.clone());
+    let e = merge(
+        &req(),
+        &[extra, ok("gemini/b", 1.0, r)],
+        &Rules {
+            quorum: 1,
+            ..Default::default()
+        },
+    );
+    assert!(
+        e.is_ok(),
+        "gemini covers everything; jev's bad reply only fails jev"
+    );
 }

@@ -10,7 +10,8 @@ All notable changes to this project are documented here. The format follows
 - Panels: ask several models at once and combine their answers.
   `panelEngine` (JS) and `panel_engine` (Python) register like any engine
   (`"panel/<name>"`), with `vote` and `race` modes, per-member `enabled` and
-  `weight`, live config, `quorum`, `timeout_ms`, and `merge: "vote" | "mean"`.
+  `weight`, per-question routing (`questions`), live config, `quorum`
+  (per question), `timeout_ms`, and `merge: "vote" | "mean"`.
   The pure `merge` lives in the core (`json::merge` in every binding). New
   reasons `below_quorum` and `mixed_probability_source`; new
   `probability_source` value `vote`. See `docs/concurrent-models.md`.

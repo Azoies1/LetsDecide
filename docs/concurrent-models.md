@@ -55,6 +55,37 @@ service. It never holds keys.
 - **Live toggles:** `panelEngine(cfg)` takes the object or a function
   returning it (sync or async), and reads it on every call.
 - **Weight:** per member, default `1`, must be positive.
+- **Routing:** `questions: ["nsfw"]` on a member asks it only those questions
+  (see [Routing](#routing)). Without it, a member answers everything.
+
+## Routing
+
+Send each question only to the models you trust for it:
+
+```json
+{
+  "triage": {
+    "members": [
+      { "model": "gemini/gemini-decision-1", "questions": ["nsfw", "violence"] },
+      { "model": "jev/jev-latest", "questions": ["topic"] },
+      { "model": "openai/gpt-6-luna" }
+    ]
+  }
+}
+```
+
+- Each member gets a request with only its questions, so it is billed for
+  less and its own limits (question count, kinds) apply to that subset.
+- Each question is voted on only by the members routed to it. `quorum`
+  applies **per question**; without routing that is the same as before.
+  Below quorum, the error names the `question` and the last failing member.
+- **Checked before any call:** a question no member covers (`InvalidRequest`,
+  field `members`, with the `question`), an unknown or empty `questions` list
+  (field `questions`), and routing in `race` mode (field `questions`: the
+  winner must answer everything). `merge` repeats the first two checks for
+  direct callers.
+- A member that answers questions it wasn't asked fails `check` and counts as
+  failed.
 
 ## Modes
 
@@ -86,11 +117,11 @@ service. It never holds keys.
 
 `merge(request, members, rules)` in Rust, and `json::merge` for the bindings
 (WASM, Python, UniFFI). Each member is
-`{ model, weight?, response | error | skipped: true }`. The panel engines call
+`{ model, weight?, questions?, response | error | skipped: true }`. The panel engines call
 it; it is also usable directly.
 
-- Every member's response is run through `DecisionResponse::check` first. One
-  that fails counts as failed (`BadResponse`, with its prefix as `provider`).
+- Every member's response is run through `DecisionResponse::check` first,
+  against the questions it was asked. One that fails counts as failed (`BadResponse`, with its prefix as `provider`).
 - **Vote (default), scale-free:**
   - Yes/no: weighted majority of `p >= 0.5`.
   - Choice and score: weighted majority of the top option or level id. The ids
@@ -155,11 +186,8 @@ entry. Until it lands, set `byProvider` whenever a panel spans providers.
 ## Deliberately not doing
 
 - `cascade` as a mode: the planned `escalate({ to, when })` middleware covers it.
-- `all` as a mode: `vote` plus `res.panel` already returns every raw response.
+- `all` as a mode: `vote` plus `res.panel` already returns every raw response
+  (decided by the maintainer).
 - Per-member timeouts, a rule language, and learned weights (calibration
   belongs to M5 and must never be silent).
 - Concurrency inside the Rust core. It stays sans-IO.
-
-## Open questions
-
-- Per-question routing (send question X only to Gemini): useful, or premature?

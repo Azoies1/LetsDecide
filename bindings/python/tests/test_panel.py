@@ -149,3 +149,41 @@ def test_engine_extras_pass_through_checked_fields_win():
     with pytest.raises(LetsDecideError) as e:
         c.decide("bad/x", REQUEST)
     assert e.value.code == "BadResponse"
+
+
+@pytest.mark.parametrize("make", [Client, AsyncClient])
+async def test_routing(make):
+    seen = {}
+
+    class Spy:
+        def __init__(self, name, inner):
+            self.name, self.inner = name, inner
+
+        def decide(self, model, request):
+            seen[self.name] = sorted(request["questions"])
+            return self.inner.decide(model, request)
+
+    members = [{"model": "a/x", "questions": ["billing"]}, {"model": "b/x", "questions": ["team"]}, {"model": "no/c"}]
+    c = make(engines=engines({"p": {"members": members}}, a=Spy("a", says(0.9, "pay")), b=Spy("b", says(0.9, "pay"))))
+    res = c.decide("panel/p", REQUEST)
+    res = await res if asyncio.iscoroutine(res) else res
+    assert seen == {"a": ["billing"], "b": ["team"]}
+    assert abs(res["answers"]["billing"]["probability"] - 0.5) < 1e-6
+    assert res["disagreed"] == ["billing", "team"]
+
+
+def test_routing_config_checked_first_and_quorum_per_question():
+    c = Client(engines=engines({
+        "uncovered": {"members": [{"model": "yes/a", "questions": ["billing"]}]},
+        "unknown": {"members": [{"model": "yes/a", "questions": ["nope"]}, {"model": "no/b"}]},
+        "race": {"mode": "race", "members": [{"model": "yes/a", "questions": ["billing"]}, {"model": "no/b"}]},
+        "q": {"members": [{"model": "down/a", "questions": ["billing"]}, {"model": "yes/b", "questions": ["team"]}]},
+    }))
+    for name, field in [("uncovered", "members"), ("unknown", "questions"), ("race", "questions")]:
+        with pytest.raises(LetsDecideError) as e:
+            c.decide(f"panel/{name}", REQUEST)
+        assert e.value.code == "InvalidRequest" and e.value.details["field"] == field
+    with pytest.raises(LetsDecideError) as e:
+        c.decide("panel/q", REQUEST)
+    d = e.value.details
+    assert (d["reason"], d["question"], d["provider"]) == ("below_quorum", "billing", "down")

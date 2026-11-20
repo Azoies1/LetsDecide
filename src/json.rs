@@ -169,6 +169,7 @@ struct MemberIn {
     model: String,
     #[serde(default = "one")]
     weight: f32,
+    questions: Option<Vec<String>>,
     response: Option<DecisionResponse>,
     error: Option<MemberError>,
     #[serde(default)]
@@ -221,6 +222,7 @@ pub fn merge(request: &str, members: &str, rules: &str) -> String {
                 };
                 Ok(Member {
                     model: m.model,
+                    questions: m.questions,
                     weight: m.weight,
                     outcome,
                 })

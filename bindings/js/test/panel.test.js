@@ -161,3 +161,35 @@ test("engine extras pass through; checked fields win and are still checked", asy
   assert.equal(res.probability_source, "provider"); // filled by the check, not the engine
   await assert.rejects(c.decide("bad/x", request), (e) => e.code === "BadResponse");
 });
+
+test("routing sends each member only its questions and votes per question", async () => {
+  const seen = {};
+  const spyOn = (name, inner) => ({ async decide(m, r, o) { seen[name] = Object.keys(r.questions); return inner.decide(m, r, o); } });
+  const c = client(
+    { p: { members: [{ model: "a/x", questions: ["billing"] }, { model: "b/x", questions: ["team"] }, { model: "no/c" }] } },
+    { a: spyOn("a", says(0.9, "pay")), b: spyOn("b", says(0.9, "pay")) },
+  );
+  const res = await c.decide("panel/p", request);
+  assert.deepEqual(seen, { a: ["billing"], b: ["team"] });
+  assert.ok(Math.abs(res.answers.billing.probability - 0.5) < 1e-6); // a yes, no/c no
+  assert.deepEqual(res.disagreed, ["billing", "team"]);
+});
+
+test("routing config is checked before any call", async () => {
+  let called = false;
+  const spy = { async decide() { called = true; throw new Error("unreachable"); } };
+  const cases = {
+    uncovered: [{ model: "spy/a", questions: ["billing"] }],
+    unknown: [{ model: "spy/a", questions: ["nope"] }, { model: "yes/b" }],
+  };
+  const c = client({ ...Object.fromEntries(Object.entries(cases).map(([k, members]) => [k, { members }])), race: { mode: "race", members: [{ model: "spy/a", questions: ["billing"] }, { model: "yes/b" }] } }, { spy });
+  for (const [name, field] of [["uncovered", "members"], ["unknown", "questions"], ["race", "questions"]]) {
+    await assert.rejects(c.decide(`panel/${name}`, request), (e) => e.code === "InvalidRequest" && e.details.field === field);
+  }
+  assert.equal(called, false);
+});
+
+test("routing quorum is per question", async () => {
+  const c = client({ p: { members: [{ model: "down/a", questions: ["billing"] }, { model: "yes/b", questions: ["team"] }] } });
+  await assert.rejects(c.decide("panel/p", request), (e) => e.details.reason === "below_quorum" && e.details.question === "billing" && e.details.provider === "down");
+});

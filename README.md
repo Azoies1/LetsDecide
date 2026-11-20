@@ -261,7 +261,11 @@ const client = new Client(
   { byProvider: { jev: { apiKey: JEV_KEY }, gemini: { apiKey: GEMINI_KEY } } },
   { engines: { panel: panelEngine({
     moderation: {
-      members: [{ model: "jev/jev-latest" }, { model: "gemini/gemini-decision-1", weight: 2 }],
+      members: [
+        { model: "jev/jev-latest" },
+        { model: "gemini/gemini-decision-1", weight: 2 },
+        { model: "openai/gpt-6-luna", questions: ["topic"] }, // routing: only this question
+      ],
       rules: { quorum: 2, timeout_ms: 3000 },
     },
   }) } },
@@ -271,7 +275,8 @@ res.agreement; res.disagreed; res.panel; // how the members voted
 ```
 
 `vote` (weighted majority; `merge: "mean"` only within one probability source)
-or `race` (first answer wins). Members switch on and off with `enabled`, and
+or `race` (first answer wins). Members switch on and off with `enabled`, can
+be routed to specific questions with `questions`, and
 the config can be a function read on every call. Python: `panel_engine`. See
 [docs/concurrent-models.md](docs/concurrent-models.md).
 

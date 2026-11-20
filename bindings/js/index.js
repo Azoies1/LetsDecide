@@ -304,6 +304,26 @@ export function panelEngine(panels) {
       const active = members.filter((m) => m.enabled !== false);
       if (!active.length) throw invalidPanel(`panel \`${name}\` has no enabled members`, "members");
       if (mode !== "vote" && mode !== "race") throw invalidPanel(`unknown panel mode \`${mode}\``, "mode");
+      // Routing: a member with `questions` is asked only those. Checked before any call.
+      const routed = active.filter((m) => m.questions);
+      if (routed.length && mode === "race") throw invalidPanel("routing (`questions`) needs `vote` mode", "questions");
+      for (const m of routed) {
+        if (!m.questions.length || m.questions.some((q) => !Object.hasOwn(request.questions, q))) {
+          throw invalidPanel(`member \`${m.model}\`: \`questions\` must list questions of the request`, "questions");
+        }
+      }
+      const uncovered = Object.keys(request.questions).find((q) => !active.some((m) => !m.questions || m.questions.includes(q)));
+      if (uncovered) {
+        throw new LetsDecideError({
+          code: "InvalidRequest",
+          message: `no panel member is routed question \`${uncovered}\``,
+          retryable: false,
+          details: { reason: "invalid_config", field: "members", question: uncovered },
+        });
+      }
+      const ask = (m) => (m.questions
+        ? { ...request, questions: Object.fromEntries(m.questions.map((q) => [q, request.questions[q]])) }
+        : request);
 
       // One controller aborts every member: on the caller's signal, the deadline, or a race win.
       const ctrl = new AbortController();
@@ -321,19 +341,19 @@ export function panelEngine(panels) {
         const t0 = Date.now();
         const record = (entry) => (panel[m.model] = { ...entry, ms: Date.now() - t0 });
         try {
-          const response = await Promise.race([decide(m.model, request, { signal: ctrl.signal }), deadline]);
+          const response = await Promise.race([decide(m.model, ask(m), { signal: ctrl.signal }), deadline]);
           record({ response });
-          return { model: m.model, weight: m.weight ?? 1, response };
+          return { model: m.model, weight: m.weight ?? 1, questions: m.questions, response };
         } catch (e) {
           if (signal?.aborted) throw e; // the caller cancelled: not a member failure
           if (e?.code === "Unsupported") {
             record({ skipped: true });
-            return { model: m.model, weight: m.weight ?? 1, skipped: true };
+            return { model: m.model, weight: m.weight ?? 1, questions: m.questions, skipped: true };
           }
           const err = e instanceof LetsDecideError ? e : timedOut;
           const error = { code: err.code, status: err.status, retry_after_ms: err.retryAfterMs, details: err.details };
           record({ error: { code: err.code, details: err.details } });
-          return { model: m.model, weight: m.weight ?? 1, error, thrown: err };
+          return { model: m.model, weight: m.weight ?? 1, questions: m.questions, error, thrown: err };
         }
       };
 

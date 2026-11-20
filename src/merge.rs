@@ -25,7 +25,17 @@ pub struct Member {
     /// `"provider/model"`; the prefix goes into error details.
     pub model: String,
     pub weight: f32,
+    /// Routing: the questions this member was asked. `None`: all of them.
+    pub questions: Option<Vec<Id>>,
     pub outcome: Outcome,
+}
+
+impl Member {
+    fn covers(&self, qid: &str) -> bool {
+        self.questions
+            .as_ref()
+            .is_none_or(|qs| qs.iter().any(|q| q == qid))
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -196,32 +206,74 @@ pub fn merge(req: &DecisionRequest, members: &[Member], rules: &Rules) -> Result
         return invalid("member `weight` must be a positive number", "weight");
     }
 
+    for m in members {
+        if let Some(qs) = &m.questions {
+            if qs.is_empty() || qs.iter().any(|q| !req.questions.contains_key(q)) {
+                return invalid(
+                    "member `questions` must list questions of the request",
+                    "questions",
+                );
+            }
+        }
+    }
+    if let Some(q) = req
+        .questions
+        .keys()
+        .find(|q| !members.iter().any(|m| m.covers(q)))
+    {
+        return Err(Error::detailed(
+            ErrorCode::InvalidRequest,
+            format!("no panel member is routed question `{q}`"),
+            Details::new(Reason::InvalidConfig)
+                .field("members")
+                .question(q),
+        ));
+    }
+
+    // Each member is checked against the questions it was asked.
     let mut answered: Vec<(&Member, &DecisionResponse)> = vec![];
-    let mut last_err: Option<(Error, &str)> = None;
+    let mut failed: Vec<(&Member, Error)> = vec![];
     for m in members {
         match &m.outcome {
-            Outcome::Answered(r) => match r.check(req) {
-                Ok(()) => answered.push((m, r)),
-                Err(e) => last_err = Some((e, prefix(&m.model))),
-            },
-            Outcome::Failed(e) => last_err = Some((e.clone(), prefix(&m.model))),
+            Outcome::Answered(r) => {
+                let checked = match &m.questions {
+                    None => r.check(req),
+                    Some(qs) => {
+                        let mut sub = req.clone();
+                        sub.questions.retain(|k, _| qs.contains(k));
+                        r.check(&sub)
+                    }
+                };
+                match checked {
+                    Ok(()) => answered.push((m, r)),
+                    Err(e) => failed.push((m, e)),
+                }
+            }
+            Outcome::Failed(e) => failed.push((m, e.clone())),
             Outcome::Skipped => {}
         }
     }
 
-    if answered.len() < rules.quorum {
+    // Quorum is per question: without routing, the same for every question.
+    for qid in req.questions.keys() {
+        let n = answered.iter().filter(|(m, _)| m.covers(qid)).count();
+        if n >= rules.quorum {
+            continue;
+        }
         // Keep the last failure's code, status and retry hint, so `retry`
         // and `fallback` treat the panel like the member that failed.
-        let (base, failed) =
-            last_err.unwrap_or_else(|| (Error::new(ErrorCode::Unsupported, ""), ""));
-        let mut d = Details::new(Reason::BelowQuorum).limit(rules.quorum, answered.len());
-        d.provider = (!failed.is_empty()).then(|| failed.to_owned());
+        let last = failed.iter().rev().find(|(m, _)| m.covers(qid));
+        let base = last.map_or_else(
+            || Error::new(ErrorCode::Unsupported, ""),
+            |(_, e)| e.clone(),
+        );
+        let mut d = Details::new(Reason::BelowQuorum).limit(rules.quorum, n);
+        d.provider = last.map(|(m, _)| prefix(&m.model).to_owned());
+        if members.iter().any(|m| m.questions.is_some()) {
+            d.question = Some(qid.clone());
+        }
         return Err(Error {
-            message: format!(
-                "{} of {} required members answered",
-                answered.len(),
-                rules.quorum
-            ),
+            message: format!("{n} of {} required members answered", rules.quorum),
             details: Some(Box::new(d)),
             ..base
         });
@@ -254,6 +306,7 @@ pub fn merge(req: &DecisionRequest, members: &[Member], rules: &Rules) -> Result
     for (qid, q) in &req.questions {
         let voters: Vec<(&Answer, f32, Id)> = answered
             .iter()
+            .filter(|(m, _)| m.covers(qid))
             .filter_map(|(m, r)| {
                 let a = &r.answers[qid];
                 top(q, a).map(|t| (a, m.weight, t))

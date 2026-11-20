@@ -487,6 +487,7 @@ class _Panel:
             return self._adecide(name, request, decide)
         panels = self._panels() if callable(self._panels) else self._panels
         mode, members, rules, timeout = self._config(name, panels)
+        _check_routing(mode, members, request)
         # Sync clients call members in order; the deadline is checked between them.
         start, outcomes, panel = time.monotonic(), [], {}
         for m in members:
@@ -495,7 +496,7 @@ class _Panel:
                 continue
             t0 = time.monotonic()
             try:
-                o = _answered(m, panel, t0, decide(m["model"], request))
+                o = _answered(m, panel, t0, decide(m["model"], _ask(m, request)))
             except LetsDecideError as e:
                 o = _failed(m, panel, t0, e)
             outcomes.append(o)
@@ -508,12 +509,13 @@ class _Panel:
         if inspect.isawaitable(panels):
             panels = await panels
         mode, members, rules, timeout = self._config(name, panels)
+        _check_routing(mode, members, request)
         panel = {}
 
         async def run(m):
             t0 = time.monotonic()
             try:
-                return _answered(m, panel, t0, await decide(m["model"], request))
+                return _answered(m, panel, t0, await decide(m["model"], _ask(m, request)))
             except LetsDecideError as e:
                 return _failed(m, panel, t0, e)
 
@@ -537,19 +539,55 @@ class _Panel:
         return _finish(mode, request, ordered, rules, panel)
 
 
+def _check_routing(mode, members, request):
+    """Routing: a member with `questions` is asked only those. Checked before any call."""
+    asked = request["questions"]
+    routed = [m for m in members if m.get("questions") is not None]
+    if routed and mode == "race":
+        raise _invalid("routing (`questions`) needs `vote` mode", reason="invalid_config", field="questions")
+    for m in routed:
+        if not m["questions"] or any(q not in asked for q in m["questions"]):
+            raise _invalid(
+                f"member `{m['model']}`: `questions` must list questions of the request",
+                reason="invalid_config",
+                field="questions",
+            )
+    for q in asked:
+        if not any(m.get("questions") is None or q in m["questions"] for m in members):
+            raise _invalid(
+                f"no panel member is routed question `{q}`",
+                reason="invalid_config",
+                field="members",
+                question=q,
+            )
+
+
+def _ask(m, request):
+    if m.get("questions") is None:
+        return request
+    return {**request, "questions": {q: request["questions"][q] for q in m["questions"]}}
+
+
+def _entry(m, **outcome):
+    e = {"model": m["model"], "weight": m.get("weight", 1), **outcome}
+    if m.get("questions") is not None:
+        e["questions"] = m["questions"]
+    return e
+
+
 def _answered(m, panel, t0, response):
     panel[m["model"]] = {"response": response, "ms": round((time.monotonic() - t0) * 1000)}
-    return {"model": m["model"], "weight": m.get("weight", 1), "response": response}
+    return _entry(m, response=response)
 
 
 def _failed(m, panel, t0, e):
     ms = round((time.monotonic() - t0) * 1000)
     if e.code == "Unsupported":
         panel[m["model"]] = {"skipped": True, "ms": ms}
-        return {"model": m["model"], "weight": m.get("weight", 1), "skipped": True}
+        return _entry(m, skipped=True)
     panel[m["model"]] = {"error": {"code": e.code, "details": e.details}, "ms": ms}
     error = {"code": e.code, "status": e.status, "retry_after_ms": e.retry_after_ms, "details": e.details}
-    return {"model": m["model"], "weight": m.get("weight", 1), "error": error, "thrown": e}
+    return _entry(m, error=error, thrown=e)
 
 
 def _timed_out(m, panel, waited):

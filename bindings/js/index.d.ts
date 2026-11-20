@@ -215,7 +215,8 @@ export function mockEngine(options?: { answers?: Record<string, Answer>; model?:
 export interface Panel {
   /** `vote` (default): merge every answer. `race`: first answer wins, the rest are aborted. */
   mode?: "vote" | "race";
-  members: { model: string; enabled?: boolean; weight?: number }[];
+  /** `questions`: route only these question ids to the member (vote mode). Default: all. */
+  members: { model: string; enabled?: boolean; weight?: number; questions?: string[] }[];
   rules?: {
     /** Minimum members that must answer (default 1). */
     quorum?: number;
