@@ -195,3 +195,51 @@ test("conformance kit accepts the core's own golden fixtures for a built-in shim
   const report = await checkProvider(shim, fixtures);
   assert.equal(report.failed, 0, JSON.stringify(report.results.filter((r) => !r.ok)));
 });
+
+test("byProvider gives each provider its own settings", async () => {
+  const seen = {};
+  const fetch = async (url, init) => {
+    seen[new URL(url).host] = init.headers;
+    return respond(401, {})();
+  };
+  let n = 0;
+  const client = new Client(
+    { apiKey: "top", byProvider: { gemini: { apiKey: () => `g${++n}` }, acme: { apiKey: "a", headers: { "x-t": "1" } } } },
+    { fetch, wasm, providers: { acme } },
+  );
+  await assert.rejects(client.decide("gemini/gemini-decision-1", request));
+  await assert.rejects(client.decide("jev/jev-latest", request));
+  await assert.rejects(client.decide("acme/m", request));
+  assert.equal(seen["generativelanguage.googleapis.com"]["x-goog-api-key"], "g1");
+  assert.equal(seen["api.typesafe.ai"].authorization, "Bearer top");
+  assert.equal(seen["api.acme.test"].authorization, "Bearer a");
+  assert.equal(seen["api.acme.test"]["x-t"], "1");
+});
+
+test("engines can call other models through the client", async () => {
+  const fetch = async () => assert.fail("must not send");
+  const avg = {
+    async decide(_m, req, { decide }) {
+      const [a, b] = await Promise.all([decide("mock/a", req), decide("hi/b", req)]);
+      return { ...a, model: "avg", answers: { billing: { kind: "yesno", probability: (a.answers.billing.probability + b.answers.billing.probability) / 2 }, team: a.answers.team } };
+    },
+  };
+  const hi = mockEngine({ answers: { billing: { kind: "yesno", probability: 0.9 } } });
+  const client = new Client({}, { fetch, wasm, engines: { mock: mockEngine(), hi, avg } });
+  const out = await client.decide("avg/x", request);
+  assert.equal(out.answers.billing.probability, 0.7);
+});
+
+test("an engine that calls itself stops at MAX_DEPTH", async () => {
+  let calls = 0;
+  const loop = { async decide(m, req, { decide }) { calls++; return decide("loop/x", req); } };
+  const client = new Client({}, { fetch: async () => {}, wasm, engines: { loop } });
+  await assert.rejects(client.decide("loop/x", request), (e) => e.code === "InvalidRequest" && e.details.field === "engines");
+  assert.equal(calls, 4);
+});
+
+test("client.capabilities covers built-in and custom providers", async () => {
+  const client = new Client({}, { fetch: async () => {}, wasm, providers: { acme } });
+  assert.equal((await client.capabilities("clef/x")).max_questions, 64);
+  assert.equal((await client.capabilities("acme/x")).max_questions, 5);
+});

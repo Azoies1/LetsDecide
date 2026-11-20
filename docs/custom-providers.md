@@ -63,6 +63,22 @@ await client.decide("acme/acme-decide-2", request);
 same-named ones, as for built-ins. `config.options` is yours: put region,
 deployment or anything else your API needs there.
 
+### Settings per provider
+
+Using several providers from one client? Give each its own settings with
+`byProvider` (Python: `by_provider`). Each entry is merged over the top-level
+fields **for that provider only**, so a key meant for one provider never goes
+to another. Any value may be a function, called on every request:
+
+```js
+const client = new Client(
+  { byProvider: { jev: { apiKey: JEV_KEY }, gemini: { apiKey: () => vault.get("gemini") }, acme: { options: { region: "eu" } } } },
+  { providers: { acme } },
+);
+```
+
+Your codec receives its merged slice as `config`.
+
 ### Python
 
 ```python
@@ -122,6 +138,29 @@ const client = new Client({}, { engines: { local } });
 
 Python: an object with `decide(model, request)`. `Client` needs a sync
 `decide`; `AsyncClient` takes either.
+
+### Calling other models from an engine
+
+`decide` receives a callback that calls any model through the same client,
+built-in or custom, with the same checks. Use it for engines that combine
+models (a panel, a router, a local-first cascade):
+
+```js
+const router = {
+  async decide(model, request, { decide }) {
+    const quick = await decide("local/tiny", request);
+    return isUnsure(quick) ? decide("gemini/gemini-decision-1", request) : quick;
+  },
+};
+```
+
+Python: add a `decide` parameter (`def decide(self, model, request, decide)`);
+engines without one are called as before. Nesting is capped at `MAX_DEPTH`
+(4): an engine that ends up calling itself fails with `InvalidRequest`
+(`invalid_config`, field `engines`) instead of looping.
+
+`client.capabilities(model)` returns any model's capabilities, built-in or
+custom, so a router can skip models that can't take a request.
 
 Set `probability_source` honestly: `provider` (a decision API's numbers),
 `logprob` (label log-probs) or `nli` (entailment scores). It defaults to

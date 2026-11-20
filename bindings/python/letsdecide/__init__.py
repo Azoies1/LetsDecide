@@ -11,6 +11,7 @@ from . import _core
 
 __all__ = [
     "BUILTIN",
+    "MAX_DEPTH",
     "AsyncClient",
     "Client",
     "LetsDecideError",
@@ -56,6 +57,11 @@ def _httpx():
 
 #: Built-in provider names; custom providers can't take them without `replace`.
 BUILTIN = ("jev", "clef", "gemini", "openai", "systemone")
+
+#: How deep engines may call back into the client (a panel of panels...).
+MAX_DEPTH = 4
+
+_FIELDS = ("api_key", "access_token", "base_url", "account_id", "headers", "options")
 
 _NAME = re.compile(r"[a-z0-9_-]{1,64}")
 _HEADER_NAME = re.compile(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+")
@@ -113,6 +119,15 @@ def _invalid(message, **details):
     return LetsDecideError("InvalidRequest", message, details=details or None)
 
 
+def _accepts_decide(fn):
+    """Whether an engine's `decide` takes the `decide=` callback."""
+    try:
+        params = inspect.signature(fn).parameters.values()
+    except (TypeError, ValueError):
+        return False
+    return any(p.name == "decide" or p.kind is p.VAR_KEYWORD for p in params)
+
+
 class _Custom:
     def __init__(self, kind, impl):
         self.kind = kind
@@ -120,6 +135,7 @@ class _Custom:
         self.capabilities = getattr(impl, "capabilities", None)
         if callable(self.capabilities):
             self.capabilities = self.capabilities()
+        self.wants_decide = kind == "engine" and _accepts_decide(impl.decide)
 
 
 class _Base:
@@ -135,20 +151,34 @@ class _Base:
         providers=None,
         engines=None,
         replace=(),
+        by_provider=None,
     ):
         """`access_token`: OAuth token (Clef) or a callable returning a fresh one,
         called on every request. Wins over `api_key`. `headers`: dict or list of
         pairs, sent last (replace same-named ones). `options`: free-form
         settings for custom providers. `providers`: custom HTTP codecs by name
         (`build`, `parse`, optional `capabilities`). `engines`: custom engines by
-        name (`decide`, optional `capabilities`). `replace`: built-in names they
-        may override."""
-        self._api_key = api_key
-        self._access_token = access_token
-        self._base_url = base_url
-        self._account_id = account_id
-        self._headers = _pairs(headers)
-        self._options = options or {}
+        name (`decide`, optional `capabilities`; a `decide=` keyword receives a
+        callback to call other models). `replace`: built-in names they may
+        override. `by_provider`: `{name: {api_key, access_token, base_url,
+        account_id, headers, options}}`, merged over the top-level fields for
+        that provider only. Any value may be a callable, called per request."""
+        self._top = {
+            "api_key": api_key,
+            "access_token": access_token,
+            "base_url": base_url,
+            "account_id": account_id,
+            "headers": headers,
+            "options": options,
+        }
+        self._by_provider = by_provider or {}
+        for name, own in self._by_provider.items():
+            if set(own) - set(_FIELDS):
+                raise _invalid(
+                    f"by_provider[{name!r}]: unknown setting",
+                    reason="invalid_config",
+                    field="by_provider",
+                )
         self._custom = {}
         for kind, table in (("codec", providers or {}), ("engine", engines or {})):
             for name, impl in table.items():
@@ -170,32 +200,41 @@ class _Base:
                         raise TypeError(f"{kind} `{name}` needs a `{fn}` method")
                 self._custom[name] = _Custom(kind, impl)
 
-    def _config(self, token):
-        return json.dumps(
-            {
-                "api_key": self._api_key,
-                "access_token": token,
-                "base_url": self._base_url,
-                "account_id": self._account_id,
-                "headers": self._headers,
-                "options": self._options,
-            }
-        )
+    def _raw(self, name):
+        """Top-level settings with `by_provider[name]` merged over them."""
+        own = self._by_provider.get(name, {})
+        return {k: own[k] if own.get(k) is not None else self._top[k] for k in _FIELDS}
 
-    def _provider_config(self, token):
-        """Config as a custom codec sees it."""
-        return {
-            "api_key": self._api_key,
-            "access_token": token,
-            "base_url": self._base_url,
-            "account_id": self._account_id,
-            "headers": [list(h) for h in self._headers],
-            "options": dict(self._options),
-        }
+    @staticmethod
+    def _finish(cfg):
+        cfg["headers"] = _pairs(cfg["headers"])
+        cfg["options"] = dict(cfg["options"] or {})
+        return cfg
 
-    def _token(self):
-        t = self._access_token
-        return t() if callable(t) else t
+    def _settings(self, name):
+        """Resolved settings for one provider (callables called)."""
+        out = {}
+        for k, v in self._raw(name).items():
+            v = v() if callable(v) else v
+            if inspect.isawaitable(v):
+                v.close()
+                raise TypeError(f"`{k}` returned an awaitable: use AsyncClient")
+            out[k] = v
+        return self._finish(out)
+
+    async def _asettings(self, name):
+        out = {}
+        for k, v in self._raw(name).items():
+            v = v() if callable(v) else v
+            out[k] = await v if inspect.isawaitable(v) else v
+        return self._finish(out)
+
+    def capabilities(self, model: str) -> dict:
+        """Capabilities of any `"provider/model"`, built-in or custom."""
+        custom = self._custom.get(model.partition("/")[0])
+        if custom is not None:
+            return custom.capabilities or {}
+        return capabilities(model)
 
     def _custom_for(self, model):
         name, _, rest = model.partition("/")
@@ -213,14 +252,16 @@ class _Base:
         except LetsDecideError as e:
             raise _from_user_code(name, e) from None
 
-    def _http(self, name, http):
+    @staticmethod
+    def _http(cfg, http):
         """Normalises a codec's request and adds `headers` from config."""
+        extra = cfg["headers"]
         headers = [
             h
             for h in _pairs(http.get("headers"))
-            if not any(h[0].lower() == k.lower() for k, _ in self._headers)
+            if not any(h[0].lower() == k.lower() for k, _ in extra)
         ]
-        for k, v in self._headers:
+        for k, v in extra:
             if not _HEADER_NAME.fullmatch(k) or any(c in v for c in "\r\n\0"):
                 raise _invalid(
                     "a header in `headers` is not valid", reason="invalid_config", field="headers"
@@ -240,10 +281,20 @@ class _Base:
         except LetsDecideError as e:
             raise _from_user_code(name, e) from None
 
-    def _build(self, model, request, token):
+    @staticmethod
+    def _build(model, request, cfg):
         body = json.dumps(request)
-        http = _unwrap(_core.build(model, body, self._config(token)))
+        http = _unwrap(_core.build(model, body, json.dumps(cfg)))
         return body, http
+
+    @staticmethod
+    def _too_deep(depth):
+        if depth >= MAX_DEPTH:
+            raise _invalid(
+                f"engines nested more than {MAX_DEPTH} deep (does an engine call itself?)",
+                reason="invalid_config",
+                field="engines",
+            )
 
     @staticmethod
     def _parse(model, body, res):
@@ -290,26 +341,31 @@ class Client(_Base):
             self._client = _httpx().Client(timeout=_TIMEOUT)
         return self._client
 
-    def decide(self, model: str, request: dict) -> dict:
+    def decide(self, model: str, request: dict, *, _depth: int = 0) -> dict:
         """`model`: "provider/model". `request`: `{input, questions, media?}`."""
         custom = self._custom_for(model)
         if custom:
-            return self._decide_custom(*custom, request)
-        body, http = self._build(model, request, self._token())
+            return self._decide_custom(*custom, request, _depth)
+        cfg = self._settings(model.partition("/")[0])
+        body, http = self._build(model, request, cfg)
         method, url, kw = _send_args(http)
         return self._parse(model, body, self._http_client.request(method, url, **kw))
 
-    def _decide_custom(self, name, model, custom, request):
+    def _decide_custom(self, name, model, custom, request, depth):
         self._pre(name, custom, request)
         impl = custom.impl
         if custom.kind == "engine":
-            out = _call(name, impl.decide, model, request)
+            self._too_deep(depth)
+            kw = {}
+            if custom.wants_decide:
+                kw["decide"] = lambda m, r: self.decide(m, r, _depth=depth + 1)
+            out = _call(name, lambda: impl.decide(model, request, **kw))
             if inspect.isawaitable(out):
                 out.close()
                 raise TypeError(f"engine `{name}` is async: use AsyncClient")
         else:
-            cfg = self._provider_config(self._token())
-            http = self._http(name, _call(name, impl.build, model, request, cfg))
+            cfg = self._settings(name)
+            http = self._http(cfg, _call(name, impl.build, model, request, cfg))
             method, url, kw = _send_args(http)
             res = self._http_client.request(method, url, **kw)
             out = _call(name, impl.parse, request, _reply(res))
@@ -329,26 +385,31 @@ class AsyncClient(_Base):
             self._client = _httpx().AsyncClient(timeout=_TIMEOUT)
         return self._client
 
-    async def _atoken(self):
-        token = self._token()
-        return await token if inspect.isawaitable(token) else token
-
-    async def decide(self, model: str, request: dict) -> dict:
+    async def decide(self, model: str, request: dict, *, _depth: int = 0) -> dict:
         custom = self._custom_for(model)
         if custom:
-            return await self._decide_custom(*custom, request)
-        body, http = self._build(model, request, await self._atoken())
+            return await self._decide_custom(*custom, request, _depth)
+        cfg = await self._asettings(model.partition("/")[0])
+        body, http = self._build(model, request, cfg)
         method, url, kw = _send_args(http)
         return self._parse(model, body, await self._http_client.request(method, url, **kw))
 
-    async def _decide_custom(self, name, model, custom, request):
+    async def _decide_custom(self, name, model, custom, request, depth):
         self._pre(name, custom, request)
         impl = custom.impl
         if custom.kind == "engine":
-            out = await _acall(name, impl.decide, model, request)
+            self._too_deep(depth)
+            kw = {}
+            if custom.wants_decide:
+
+                async def decide(m, r):
+                    return await self.decide(m, r, _depth=depth + 1)
+
+                kw["decide"] = decide
+            out = await _acall(name, lambda: impl.decide(model, request, **kw))
         else:
-            cfg = self._provider_config(await self._atoken())
-            http = self._http(name, await _acall(name, impl.build, model, request, cfg))
+            cfg = await self._asettings(name)
+            http = self._http(cfg, await _acall(name, impl.build, model, request, cfg))
             method, url, kw = _send_args(http)
             res = await self._http_client.request(method, url, **kw)
             out = await _acall(name, impl.parse, request, _reply(res))

@@ -268,3 +268,78 @@ def test_conformance_kit_replays_core_golden_fixtures():
     fixtures = [{"name": p.name, **json.loads(p.read_text())} for p in sorted(root.glob("*.json"))]
     report = check_provider(Shim(), fixtures)
     assert report["failed"] == 0, report["results"]
+
+
+def test_by_provider_gives_each_provider_its_own_settings():
+    seen = {}
+
+    def handler(req):
+        seen[req.url.host] = dict(req.headers)
+        return httpx.Response(401, json={})
+
+    n = iter(range(1, 10))
+    c = Client(
+        client=http_client(handler),
+        api_key="top",
+        by_provider={
+            "gemini": {"api_key": lambda: f"g{next(n)}"},
+            "acme": {"api_key": "a", "headers": {"x-t": "1"}},
+        },
+        providers={"acme": Acme()},
+    )
+    for m in ("gemini/gemini-decision-1", "jev/jev-latest", "acme/m"):
+        with pytest.raises(LetsDecideError):
+            c.decide(m, REQUEST)
+    assert seen["generativelanguage.googleapis.com"]["x-goog-api-key"] == "g1"
+    assert seen["api.typesafe.ai"]["authorization"] == "Bearer top"
+    assert seen["api.acme.test"]["authorization"] == "Bearer a"
+    assert seen["api.acme.test"]["x-t"] == "1"
+
+
+def test_by_provider_rejects_unknown_settings():
+    with pytest.raises(LetsDecideError) as e:
+        Client(by_provider={"jev": {"apikey": "typo"}})
+    assert e.value.details["field"] == "by_provider"
+
+
+class Avg:
+    def decide(self, model, request, decide):
+        a, b = decide("mock/a", request), decide("hi/b", request)
+        p = (a["answers"]["billing"]["probability"] + b["answers"]["billing"]["probability"]) / 2
+        return {**a, "model": "avg", "answers": {**a["answers"], "billing": {"kind": "yesno", "probability": p}}}
+
+
+def test_engines_can_call_other_models():
+    hi = mock_engine({"billing": {"kind": "yesno", "probability": 0.9}})
+    c = Client(engines={"mock": mock_engine(), "hi": hi, "avg": Avg()})
+    assert c.decide("avg/x", REQUEST)["answers"]["billing"]["probability"] == pytest.approx(0.7)
+
+
+async def test_async_engines_can_call_other_models():
+    class AsyncAvg:
+        async def decide(self, model, request, *, decide):
+            a = await decide("mock/a", request)
+            return {**a, "model": "avg"}
+
+    c = AsyncClient(engines={"mock": mock_engine(), "avg": AsyncAvg()})
+    assert (await c.decide("avg/x", REQUEST))["model"] == "avg"
+
+
+def test_engine_calling_itself_stops_at_max_depth():
+    calls = []
+
+    class Loop:
+        def decide(self, model, request, decide):
+            calls.append(1)
+            return decide("loop/x", request)
+
+    with pytest.raises(LetsDecideError) as e:
+        Client(engines={"loop": Loop()}).decide("loop/x", REQUEST)
+    assert e.value.details["field"] == "engines"
+    assert len(calls) == 4
+
+
+def test_client_capabilities_cover_builtin_and_custom():
+    c = Client(providers={"acme": Acme()})
+    assert c.capabilities("clef/x")["max_questions"] == 64
+    assert c.capabilities("acme/x")["max_questions"] == 5

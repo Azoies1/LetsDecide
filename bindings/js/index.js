@@ -81,6 +81,13 @@ function withHeaders(headers, extra) {
 
 const pairs = (h = []) => (Array.isArray(h) ? h : Object.entries(h));
 
+/** How deep engines may call back into the client (a panel of panels...). */
+export const MAX_DEPTH = 4;
+const DEPTH = Symbol("letsdecide.depth");
+
+// Config values may be functions (sync or async), resolved on every call.
+const resolve = async (v) => (typeof v === "function" ? await v() : v);
+
 /** Validates `request` (and checks it against `capabilities`, if given). Throws `LetsDecideError`. */
 export async function validate(request, capabilities = null, { wasm } = {}) {
   await initialize(wasm);
@@ -112,9 +119,10 @@ export async function capabilities(model, { wasm } = {}) {
 
 export class Client {
   /**
-   * @param config `{ apiKey, accessToken, baseUrl, accountId, headers, options }`. `accessToken` is an
-   *   OAuth token (Clef) or a function returning one (sync or async), called on every
-   *   request so you can refresh it.
+   * @param config `{ apiKey, accessToken, baseUrl, accountId, headers, options, byProvider }`.
+   *   Any value may be a function (sync or async), called on every request, e.g. to refresh an
+   *   OAuth `accessToken`. `byProvider`: `{ [name]: { ...same fields } }`, merged over the
+   *   top-level fields for that provider only, so each provider gets its own key.
    * @param opts `{ fetch, wasm, providers, engines, replace }`. `providers`: custom HTTP
    *   codecs `{ build, parse, capabilities? }` by name. `engines`: custom `{ decide,
    *   capabilities? }` by name (local models, mocks). `replace`: built-in names they may override.
@@ -144,16 +152,27 @@ export class Client {
     }
   }
 
-  async #config() {
-    const { accessToken, headers } = this.cfg;
+  /** Top-level config with `byProvider[name]` merged over it, values resolved. */
+  async #config(name) {
+    const own = this.cfg.byProvider?.[name] ?? {};
+    const pick = (k) => (own[k] !== undefined ? own[k] : this.cfg[k]);
     return {
-      apiKey: this.cfg.apiKey,
-      accessToken: typeof accessToken === "function" ? await accessToken() : accessToken,
-      baseUrl: this.cfg.baseUrl,
-      accountId: this.cfg.accountId,
-      headers: pairs(headers),
-      options: this.cfg.options ?? {},
+      apiKey: await resolve(pick("apiKey")),
+      accessToken: await resolve(pick("accessToken")),
+      baseUrl: await resolve(pick("baseUrl")),
+      accountId: await resolve(pick("accountId")),
+      headers: pairs(await resolve(pick("headers"))),
+      options: (await resolve(pick("options"))) ?? {},
     };
+  }
+
+  /** Capabilities of any `"provider/model"`: built-in via the core, custom from the provider. */
+  async capabilities(model) {
+    await initialize(this.wasm);
+    const name = model.slice(0, model.indexOf("/"));
+    const custom = name && this.custom.get(name);
+    if (custom) return custom.impl.capabilities ?? {};
+    return unwrap(core.capabilities(model));
   }
 
   async #send(http, signal) {
@@ -167,13 +186,13 @@ export class Client {
   }
 
   /** `model`: "provider/model". `request`: `{ input, questions, media? }`. */
-  async decide(model, request, { signal } = {}) {
+  async decide(model, request, { signal, [DEPTH]: depth = 0 } = {}) {
     await initialize(this.wasm);
     const name = model.slice(0, model.indexOf("/"));
     const custom = name && this.custom.get(name);
-    if (custom) return this.#decideCustom(name, model.slice(name.length + 1), custom, request, signal);
+    if (custom) return this.#decideCustom(name, model.slice(name.length + 1), custom, request, signal, depth);
     const req = JSON.stringify(request);
-    const cfg = await this.#config();
+    const cfg = await this.#config(name);
     const config = JSON.stringify({
       api_key: cfg.apiKey,
       access_token: cfg.accessToken,
@@ -188,7 +207,7 @@ export class Client {
   }
 
   // Same guarantees as built-ins: validate first, check the answer after.
-  async #decideCustom(name, model, { kind, impl }, request, signal) {
+  async #decideCustom(name, model, { kind, impl }, request, signal, depth) {
     const tag = (e) => fromUserCode(name, e);
     if (!model) throw new LetsDecideError({ code: "InvalidRequest", message: "model must look like `provider/model`", retryable: false });
     try {
@@ -199,12 +218,22 @@ export class Client {
     let out;
     if (kind === "engine") {
       try {
-        out = await impl.decide(model, request, { signal });
+        if (depth >= MAX_DEPTH) {
+          throw new LetsDecideError({
+            code: "InvalidRequest",
+            message: `engines nested more than ${MAX_DEPTH} deep (does an engine call itself?)`,
+            retryable: false,
+            details: { reason: "invalid_config", field: "engines" },
+          });
+        }
+        // Engines may call other models through the client (e.g. a panel's members).
+        const decide = (m, r, o = {}) => this.decide(m, r, { signal, ...o, [DEPTH]: depth + 1 });
+        out = await impl.decide(model, request, { signal, decide });
       } catch (e) {
         throw tag(e);
       }
     } else {
-      const cfg = await this.#config();
+      const cfg = await this.#config(name);
       let http;
       try {
         http = await impl.build(model, request, cfg);

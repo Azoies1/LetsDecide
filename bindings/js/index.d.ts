@@ -54,19 +54,27 @@ export interface DecisionResponse {
   probability_source: "provider" | "logprob" | "nli";
 }
 
-export interface ClientConfig {
-  /** Static key. Required for `gemini/*`. */
-  apiKey?: string;
-  /** OAuth access token for `clef/*`, or a function returning a fresh one (called per request). Wins over `apiKey`. */
-  accessToken?: string | (() => string | Promise<string>);
-  /** Required for `systemone/*`. */
-  baseUrl?: string;
-  /** Required for `clef/*`. */
-  accountId?: string;
-  /** Extra headers (gateways, tenants); replace same-named adapter headers. */
-  headers?: Record<string, string> | [string, string][];
-  /** Free-form settings for custom providers; built-ins ignore them. */
-  options?: Record<string, Json>;
+type Lazy<T> = T | (() => T | Promise<T>);
+
+/** Per-provider settings, merged over the top-level ones for that provider only. */
+export interface ProviderSettings {
+  apiKey?: Lazy<string>;
+  accessToken?: Lazy<string>;
+  baseUrl?: Lazy<string>;
+  accountId?: Lazy<string>;
+  headers?: Lazy<Record<string, string> | [string, string][]>;
+  options?: Lazy<Record<string, Json>>;
+}
+
+export interface ClientConfig extends ProviderSettings {
+  /**
+   * Settings per provider prefix, e.g. `{ jev: { apiKey }, acme: { options } }`, merged over
+   * the top-level fields for that provider only. Any value may be a function, called per request.
+   * Top-level: `apiKey` (required for `gemini/*`), `accessToken` (OAuth, `clef/*`; wins over
+   * `apiKey`), `baseUrl` (required for `systemone/*`), `accountId` (required for `clef/*`),
+   * `headers` (replace same-named adapter headers), `options` (for custom providers).
+   */
+  byProvider?: Record<string, ProviderSettings>;
 }
 
 export interface ClientOptions {
@@ -131,6 +139,8 @@ export class Client {
   constructor(config?: ClientConfig, options?: ClientOptions);
   /** `model` is `"provider/model"`, e.g. `"clef/clef-flash"`. */
   decide(model: string, request: DecisionRequest, options?: { signal?: AbortSignal }): Promise<DecisionResponse>;
+  /** Capabilities of any `"provider/model"`, built-in or custom. */
+  capabilities(model: string): Promise<Capabilities>;
 }
 export * from "./middleware";
 
@@ -183,11 +193,18 @@ export interface Codec {
 
 /** A custom provider that isn't one HTTP round trip: local models, mocks, rules. */
 export interface Engine {
-  decide(model: string, request: DecisionRequest, options: { signal?: AbortSignal }): Promise<DecisionResponse>;
+  /** `options.decide` calls any model through the same client (custom or built-in), e.g. a panel's members. */
+  decide(
+    model: string,
+    request: DecisionRequest,
+    options: { signal?: AbortSignal; decide: (model: string, request: DecisionRequest, options?: { signal?: AbortSignal }) => Promise<DecisionResponse> },
+  ): Promise<DecisionResponse>;
   capabilities?: Capabilities;
 }
 
 export const BUILTIN: readonly string[];
+/** How deep engines may call back into the client. */
+export const MAX_DEPTH: number;
 export function validate(request: DecisionRequest, capabilities?: Capabilities | null, options?: { wasm?: BufferSource | WebAssembly.Module }): Promise<void>;
 export function check(request: DecisionRequest, response: unknown, options?: { wasm?: BufferSource | WebAssembly.Module }): Promise<DecisionResponse>;
 export function classifyHttp(response: { status: number; headers?: Record<string, string> | [string, string][]; body?: string }, options?: { wasm?: BufferSource | WebAssembly.Module }): Promise<LetsDecideError>;
