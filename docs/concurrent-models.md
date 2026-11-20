@@ -31,8 +31,8 @@ rule D1 (free names, an error on a clash).
 | Need | Provided by |
 |---|---|
 | Validate the request, check each response | Engine slot (P2): the core runs `validate` before and `check` after |
-| Call member models | `opts.decide`, the client's own re-entrant `decide`, passed to engines (P2), with a nesting-depth guard so a panel can't call itself forever |
-| Skip members that can't take the request | `client.capabilities(model)` + core `validate(request, caps)` |
+| Call member models | `opts.decide`, the client's own re-entrant `decide`, passed to engines (P2); `validate`/`check` apply to every member call. `MAX_DEPTH = 4`: deeper nesting fails with `InvalidRequest` (`invalid_config`, field `engines`). Python passes `decide=` only to engines whose signature takes it (sync in `Client`, async in `AsyncClient`) |
+| Skip members that can't take the request | `client.capabilities(model)` (async in JS, sync in Python; custom providers return `{}` when undeclared) + core `validate(request, caps)` |
 | A key per provider | `byProvider` in client config (P2) |
 | Cascade / escalation | `escalate({ to, when })` middleware (P5). Not a panel mode |
 | Latency hedging, shadow, pairwise `compare` | Already on main |
@@ -100,7 +100,7 @@ toward quorum.
 - `Refused` answers abstain, and a question where every member refused stays
   `Refused`.
 - Errors use `Error::detailed`: `provider` = member prefix, `question` = id.
-  New `Reason` variants: `mixed_probability_source`, `below_quorum`,
+  New `Reason` variants (in `error.rs` and the JS `Reason` union in `index.d.ts`): `mixed_probability_source`, `below_quorum`,
   `members_disagree`.
 
 ## Output stays a `DecisionResponse`
@@ -130,8 +130,12 @@ new Client({
 });
 ```
 
-- Each entry is merged over the top-level fields **for that provider only**.
-  Custom codecs receive their merged slice as `config`.
+- Fields: `apiKey`, `accessToken`, `baseUrl`, `accountId`, `headers`,
+  `options`. Each is merged over the top-level fields **for that provider
+  only**, and a field set in the entry wins. Any value may be a sync or async
+  function, resolved per call. Custom codecs receive their merged slice as `config`.
+- Python: `by_provider={"jev": {"api_key": ...}}`. Unknown fields raise
+  `InvalidRequest` (`invalid_config`, field `by_provider`).
 - **A key only goes to its own provider.** A panel with members from more than
   one provider and only top-level credentials fails with `InvalidRequest`
   (reason `missing_config`, field `byProvider`), so a Jev key is never sent
@@ -139,7 +143,7 @@ new Client({
 
 ## Plan
 
-1. **P2 (custom-providers session):** the `{ signal, decide }` engine option
+1. **P2 (custom-providers session), built, not yet pushed:** the `{ signal, decide }` engine option
    with a depth guard, `client.capabilities(model)` and `byProvider`.
 2. **Core `merge.rs`** with the new reasons. Golden tests: unanimous, split,
    all refused, mixed `probability_source` under `mean`, below quorum, a
