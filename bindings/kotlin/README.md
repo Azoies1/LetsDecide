@@ -7,9 +7,11 @@ responses are `org.json.JSONObject`s in the canonical shape.
 ```kotlin
 import letsdecide.Client
 import letsdecide.LetsDecideException
+import letsdecide.ProviderSettings
 import org.json.JSONObject
 
-val client = Client(apiKey = "...") // also: accessToken = { fresh() }, baseUrl, accountId, transport
+// Settings per provider: a key only ever goes to its own provider.
+val client = Client(byProvider = mapOf("jev" to ProviderSettings(apiKey = "..."))) // also: accessToken = { fresh() }, baseUrl, accountId, headers; shared headers, transport
 try {
     val out = client.decide("jev/jev-latest", JSONObject("""{
         "input": "Great product, arrived late.",

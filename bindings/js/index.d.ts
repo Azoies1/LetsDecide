@@ -56,25 +56,31 @@ export interface DecisionResponse {
 
 type Lazy<T> = T | (() => T | Promise<T>);
 
-/** Per-provider settings, merged over the top-level ones for that provider only. */
+/** One provider's settings. A provider only ever sees its own entry. */
 export interface ProviderSettings {
+  /** Static key, e.g. `gemini` (sent as `x-goog-api-key`), `jev`, `openai`. */
   apiKey?: Lazy<string>;
+  /** OAuth token (e.g. `clef`); wins over `apiKey`. A function is called per request, so you can refresh it. */
   accessToken?: Lazy<string>;
+  /** Required for `systemone`; overrides the default endpoint elsewhere. */
   baseUrl?: Lazy<string>;
+  /** Required for `clef`. */
   accountId?: Lazy<string>;
+  /** Headers for this provider only; win over shared `headers` with the same name. */
   headers?: Lazy<Record<string, string> | [string, string][]>;
+  /** Free-form settings for custom providers; built-ins ignore them. */
   options?: Lazy<Record<string, Json>>;
 }
 
-export interface ClientConfig extends ProviderSettings {
-  /**
-   * Settings per provider prefix, e.g. `{ jev: { apiKey }, acme: { options } }`, merged over
-   * the top-level fields for that provider only. Any value may be a function, called per request.
-   * Top-level: `apiKey` (required for `gemini/*`), `accessToken` (OAuth, `clef/*`; wins over
-   * `apiKey`), `baseUrl` (required for `systemone/*`), `accountId` (required for `clef/*`),
-   * `headers` (replace same-named adapter headers), `options` (for custom providers).
-   */
+/**
+ * Credentials and endpoints are per provider, so a key can never reach another provider.
+ * Any other top-level field is an `InvalidRequest` (`invalid_config`).
+ */
+export interface ClientConfig {
+  /** Settings per provider prefix, e.g. `{ gemini: { apiKey }, clef: { accessToken, accountId } }`. */
   byProvider?: Record<string, ProviderSettings>;
+  /** Sent to every provider (tracing, gateways). Never put secrets here. */
+  headers?: Lazy<Record<string, string> | [string, string][]>;
 }
 
 export interface ClientOptions {

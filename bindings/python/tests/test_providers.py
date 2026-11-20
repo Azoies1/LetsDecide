@@ -91,7 +91,10 @@ def test_custom_codec_gets_config_headers_and_checks():
         return httpx.Response(200, json=REPLY)
 
     c = Client(
-        client=http_client(handler), api_key="k", headers={"x-gw": "g"}, providers={"acme": Acme()}
+        client=http_client(handler),
+        by_provider={"acme": {"api_key": "k"}},
+        headers={"x-gw": "g"},
+        providers={"acme": Acme()},
     )
     out = c.decide("acme/acme-2", REQUEST)
     assert sent["url"] == "https://api.acme.test/v1/acme-2"
@@ -270,7 +273,7 @@ def test_conformance_kit_replays_core_golden_fixtures():
     assert report["failed"] == 0, report["results"]
 
 
-def test_by_provider_gives_each_provider_its_own_settings():
+def test_each_provider_only_sees_its_own_entry():
     seen = {}
 
     def handler(req):
@@ -280,7 +283,7 @@ def test_by_provider_gives_each_provider_its_own_settings():
     n = iter(range(1, 10))
     c = Client(
         client=http_client(handler),
-        api_key="top",
+        headers={"x-trace": "t", "x-t": "shared"},
         by_provider={
             "gemini": {"api_key": lambda: f"g{next(n)}"},
             "acme": {"api_key": "a", "headers": {"x-t": "1"}},
@@ -291,9 +294,12 @@ def test_by_provider_gives_each_provider_its_own_settings():
         with pytest.raises(LetsDecideError):
             c.decide(m, REQUEST)
     assert seen["generativelanguage.googleapis.com"]["x-goog-api-key"] == "g1"
-    assert seen["api.typesafe.ai"]["authorization"] == "Bearer top"
+    # jev has no entry: no key at all, never another provider's.
+    assert "authorization" not in seen["api.typesafe.ai"]
+    assert "g1" not in str(seen["api.typesafe.ai"])
     assert seen["api.acme.test"]["authorization"] == "Bearer a"
-    assert seen["api.acme.test"]["x-t"] == "1"
+    assert seen["api.acme.test"]["x-t"] == "1"  # own header wins over shared
+    assert all(h["x-trace"] == "t" for h in seen.values())  # shared headers go everywhere
 
 
 def test_by_provider_rejects_unknown_settings():
@@ -370,3 +376,18 @@ def test_engine_extras_pass_through_checked_fields_win():
     with pytest.raises(LetsDecideError) as e:
         c.decide("bad/x", REQUEST)
     assert e.value.code == "BadResponse"
+
+
+@pytest.mark.parametrize("field", ["api_key", "access_token", "base_url", "account_id", "options"])
+def test_credentials_are_only_accepted_per_provider(field):
+    with pytest.raises(LetsDecideError) as e:
+        Client(**{field: "x"})
+    assert e.value.code == "InvalidRequest"
+    assert e.value.details == {"reason": "invalid_config", "field": field}
+    assert "by_provider" in str(e.value)
+    assert "'x'" not in str(e.value)
+
+
+def test_unknown_config_is_refused():
+    with pytest.raises(LetsDecideError):
+        Client(apikey="x")

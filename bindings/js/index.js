@@ -79,7 +79,11 @@ function withHeaders(headers, extra) {
   return out;
 }
 
-const pairs = (h = []) => (Array.isArray(h) ? h : Object.entries(h));
+const pairs = (h = []) => (Array.isArray(h) ? h : Object.entries(h ?? {}));
+
+/** Client-wide settings. Everything else is per provider. */
+const SHARED = ["byProvider", "headers"];
+const PER_PROVIDER = ["apiKey", "accessToken", "baseUrl", "accountId", "headers", "options"];
 
 /** How deep engines may call back into the client (a panel of panels...). */
 export const MAX_DEPTH = 4;
@@ -119,15 +123,38 @@ export async function capabilities(model, { wasm } = {}) {
 
 export class Client {
   /**
-   * @param config `{ apiKey, accessToken, baseUrl, accountId, headers, options, byProvider }`.
-   *   Any value may be a function (sync or async), called on every request, e.g. to refresh an
-   *   OAuth `accessToken`. `byProvider`: `{ [name]: { ...same fields } }`, merged over the
-   *   top-level fields for that provider only, so each provider gets its own key.
+   * @param config `{ byProvider, headers }`. `byProvider`: settings per provider prefix,
+   *   `{ gemini: { apiKey }, clef: { accessToken, accountId }, acme: { options } }`; a provider
+   *   only ever sees its own entry. Any value may be a function (sync or async), called on every
+   *   request, e.g. to refresh an OAuth token. `headers`: sent to every provider (tracing,
+   *   gateways); never put secrets there.
    * @param opts `{ fetch, wasm, providers, engines, replace }`. `providers`: custom HTTP
    *   codecs `{ build, parse, capabilities? }` by name. `engines`: custom `{ decide,
    *   capabilities? }` by name (local models, mocks). `replace`: built-in names they may override.
    */
   constructor(config = {}, { fetch = globalThis.fetch, wasm, providers = {}, engines = {}, replace = [] } = {}) {
+    for (const k of Object.keys(config)) {
+      if (!SHARED.includes(k)) {
+        const hint = PER_PROVIDER.includes(k) ? `set it per provider: byProvider.<name>.${k}` : "unknown setting";
+        throw new LetsDecideError({
+          code: "InvalidRequest",
+          message: `config \`${k}\`: ${hint}`,
+          retryable: false,
+          details: { reason: "invalid_config", field: k },
+        });
+      }
+    }
+    for (const [name, own] of Object.entries(config.byProvider ?? {})) {
+      const bad = Object.keys(own ?? {}).find((k) => !PER_PROVIDER.includes(k));
+      if (bad) {
+        throw new LetsDecideError({
+          code: "InvalidRequest",
+          message: `byProvider.${name}: unknown setting \`${bad}\``,
+          retryable: false,
+          details: { reason: "invalid_config", field: "byProvider", provider: name },
+        });
+      }
+    }
     this.cfg = config;
     this.fetch = fetch;
     this.wasm = wasm;
@@ -152,17 +179,19 @@ export class Client {
     }
   }
 
-  /** Top-level config with `byProvider[name]` merged over it, values resolved. */
+  /** Settings for one provider: its own `byProvider` entry plus the shared headers. */
   async #config(name) {
     const own = this.cfg.byProvider?.[name] ?? {};
-    const pick = (k) => (own[k] !== undefined ? own[k] : this.cfg[k]);
+    const shared = pairs(await resolve(this.cfg.headers));
+    const mine = pairs(await resolve(own.headers));
     return {
-      apiKey: await resolve(pick("apiKey")),
-      accessToken: await resolve(pick("accessToken")),
-      baseUrl: await resolve(pick("baseUrl")),
-      accountId: await resolve(pick("accountId")),
-      headers: pairs(await resolve(pick("headers"))),
-      options: (await resolve(pick("options"))) ?? {},
+      apiKey: await resolve(own.apiKey),
+      accessToken: await resolve(own.accessToken),
+      baseUrl: await resolve(own.baseUrl),
+      accountId: await resolve(own.accountId),
+      // The provider's own headers win over shared ones with the same name.
+      headers: [...shared.filter(([k]) => !mine.some(([m]) => m.toLowerCase() === k.toLowerCase())), ...mine],
+      options: (await resolve(own.options)) ?? {},
     };
   }
 

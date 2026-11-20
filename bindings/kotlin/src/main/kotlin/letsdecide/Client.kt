@@ -43,30 +43,50 @@ class JdkTransport(private val client: HttpClient = HttpClient.newHttpClient()) 
 }
 
 /**
+ * One provider's settings. A provider only ever sees its own entry, so a key
+ * can never reach another provider.
+ *
+ * @param accessToken OAuth token provider (Clef), called on every request so
+ *   the host can refresh it. Wins over [apiKey].
+ * @param headers Headers for this provider only; win over the client's shared
+ *   headers with the same name.
+ */
+class ProviderSettings(
+    val apiKey: String? = null,
+    val accessToken: (() -> String)? = null,
+    val baseUrl: String? = null,
+    val accountId: String? = null,
+    val headers: List<Pair<String, String>> = emptyList(),
+)
+
+/**
  * One request shape for every decision API. Requests and responses are
  * `JSONObject`s in the canonical shape (see the README).
  *
- * @param accessToken OAuth token provider (Clef), called on every request so
- *   the host can refresh it. Wins over `apiKey`.
+ * @param byProvider Settings per provider prefix, e.g.
+ *   `mapOf("gemini" to ProviderSettings(apiKey = key))`.
+ * @param headers Sent to every provider (tracing, gateways). Never secrets.
  */
 class Client(
-    private val apiKey: String? = null,
-    private val accessToken: (() -> String)? = null,
-    private val baseUrl: String? = null,
-    private val accountId: String? = null,
+    private val byProvider: Map<String, ProviderSettings> = emptyMap(),
+    private val headers: List<Pair<String, String>> = emptyList(),
     private val transport: Transport = JdkTransport(),
 ) {
     /** `model`: `"provider/model"`, e.g. `"clef/clef-flash"`. Throws [LetsDecideException]. */
     fun decide(model: String, request: JSONObject): JSONObject {
         val req = request.toString()
+        val own = byProvider[model.substringBefore('/')] ?: ProviderSettings()
+        val names = own.headers.map { it.first.lowercase() }.toSet()
+        val merged = headers.filter { it.first.lowercase() !in names } + own.headers
         val config = JSONObject()
-            .putOpt("api_key", apiKey)
-            .putOpt("access_token", accessToken?.invoke())
-            .putOpt("base_url", baseUrl)
-            .putOpt("account_id", accountId)
+            .putOpt("api_key", own.apiKey)
+            .putOpt("access_token", own.accessToken?.invoke())
+            .putOpt("base_url", own.baseUrl)
+            .putOpt("account_id", own.accountId)
+            .put("headers", JSONArray(merged.map { JSONArray(listOf(it.first, it.second)) }))
         val built = unwrap(letsdecide.ffi.build(model, req, config.toString()))
-        val headers = built.getJSONArray("headers").map { (it as JSONArray).let { h -> h.getString(0) to h.getString(1) } }
-        val reply = transport.send(Http(built.getString("method"), built.getString("url"), headers, built.getString("body")))
+        val sentHeaders = built.getJSONArray("headers").map { (it as JSONArray).let { h -> h.getString(0) to h.getString(1) } }
+        val reply = transport.send(Http(built.getString("method"), built.getString("url"), sentHeaders, built.getString("body")))
         val res = JSONObject()
             .put("status", reply.status)
             .put("headers", JSONArray(reply.headers.map { JSONArray(listOf(it.first, it.second)) }))

@@ -142,35 +142,31 @@ class _Base:
     def __init__(
         self,
         *,
-        api_key=None,
-        access_token=None,
-        base_url=None,
-        account_id=None,
+        by_provider=None,
         headers=None,
-        options=None,
         providers=None,
         engines=None,
         replace=(),
-        by_provider=None,
+        **unknown,
     ):
-        """`access_token`: OAuth token (Clef) or a callable returning a fresh one,
-        called on every request. Wins over `api_key`. `headers`: dict or list of
-        pairs, sent last (replace same-named ones). `options`: free-form
-        settings for custom providers. `providers`: custom HTTP codecs by name
-        (`build`, `parse`, optional `capabilities`). `engines`: custom engines by
-        name (`decide`, optional `capabilities`; a `decide=` keyword receives a
-        callback to call other models). `replace`: built-in names they may
-        override. `by_provider`: `{name: {api_key, access_token, base_url,
-        account_id, headers, options}}`, merged over the top-level fields for
-        that provider only. Any value may be a callable, called per request."""
-        self._top = {
-            "api_key": api_key,
-            "access_token": access_token,
-            "base_url": base_url,
-            "account_id": account_id,
-            "headers": headers,
-            "options": options,
-        }
+        """`by_provider`: settings per provider prefix, e.g. `{"gemini":
+        {"api_key": ...}, "clef": {"access_token": ..., "account_id": ...}}`
+        (fields: api_key, access_token, base_url, account_id, headers,
+        options). A provider only ever sees its own entry; any value may be a
+        callable, called per request (e.g. to refresh an OAuth token).
+        `headers`: sent to every provider (tracing, gateways); never secrets.
+        `providers`: custom HTTP codecs by name (`build`, `parse`, optional
+        `capabilities`). `engines`: custom engines by name (`decide`, optional
+        `capabilities`; a `decide=` keyword receives a callback to call other
+        models). `replace`: built-in names they may override."""
+        for k in unknown:
+            hint = (
+                f"set it per provider: by_provider[<name>][{k!r}]"
+                if k in _FIELDS
+                else "unknown setting"
+            )
+            raise _invalid(f"config `{k}`: {hint}", reason="invalid_config", field=k)
+        self._shared_headers = headers
         self._by_provider = by_provider or {}
         for name, own in self._by_provider.items():
             if set(own) - set(_FIELDS):
@@ -178,6 +174,7 @@ class _Base:
                     f"by_provider[{name!r}]: unknown setting",
                     reason="invalid_config",
                     field="by_provider",
+                    provider=name,
                 )
         self._custom = {}
         for kind, table in (("codec", providers or {}), ("engine", engines or {})):
@@ -201,13 +198,19 @@ class _Base:
                 self._custom[name] = _Custom(kind, impl)
 
     def _raw(self, name):
-        """Top-level settings with `by_provider[name]` merged over them."""
+        """This provider's own settings, plus the shared headers."""
         own = self._by_provider.get(name, {})
-        return {k: own[k] if own.get(k) is not None else self._top[k] for k in _FIELDS}
+        raw = {k: own.get(k) for k in _FIELDS}
+        raw["shared_headers"] = self._shared_headers
+        return raw
 
     @staticmethod
     def _finish(cfg):
-        cfg["headers"] = _pairs(cfg["headers"])
+        shared = _pairs(cfg.pop("shared_headers"))
+        mine = _pairs(cfg["headers"])
+        # The provider's own headers win over shared ones with the same name.
+        names = {k.lower() for k, _ in mine}
+        cfg["headers"] = [h for h in shared if h[0].lower() not in names] + mine
         cfg["options"] = dict(cfg["options"] or {})
         return cfg
 
