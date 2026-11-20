@@ -252,32 +252,21 @@ another model and measure agreement), `calibrate` + `fitIsotonic` (calibrated
 values next to raw ones) and `observe` (timing hooks). Python has the same set
 for `AsyncClient`. See [bindings/js/MIDDLEWARE.md](bindings/js/MIDDLEWARE.md).
 
-### Panels: several models at once
+### Several models at once
 
 ```js
-import { Client, panelEngine } from "letsdecide";
+import { fanOut } from "letsdecide";
 
-const client = new Client(
-  { byProvider: { jev: { apiKey: JEV_KEY }, gemini: { apiKey: GEMINI_KEY } } },
-  { engines: { panel: panelEngine({
-    moderation: {
-      members: [
-        { model: "jev/jev-latest" },
-        { model: "gemini/gemini-decision-1", weight: 2 },
-        { model: "openai/gpt-6-luna", questions: ["topic"] }, // routing: only this question
-      ],
-      rules: { quorum: 2, timeout_ms: 3000 },
-    },
-  }) } },
-);
-const res = await client.decide("panel/moderation", request);
-res.agreement; res.disagreed; res.panel; // how the members voted
+const results = await fanOut(decide, request, [
+  "jev/jev-latest",
+  { model: "gemini/gemini-decision-1", questions: ["nsfw"] }, // only this question
+  { model: "openai/gpt-6-luna", enabled: false },             // switched off
+], { timeoutMs: 3000 });
+results["jev/jev-latest"]; // { response } | { error } | { skipped } | { timedOut }, plus ms
 ```
 
-`vote` (weighted majority; `merge: "mean"` only within one probability source)
-or `race` (first answer wins). Members switch on and off with `enabled`, can
-be routed to specific questions with `questions`, and
-the config can be a function read on every call. Python: `panel_engine`. See
+Every raw answer comes back, keyed by model; nothing is merged. Python:
+`fan_out` in `letsdecide.middleware`. See
 [docs/concurrent-models.md](docs/concurrent-models.md).
 
 ## Python

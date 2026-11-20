@@ -249,7 +249,7 @@ export class Client {
       }
     }
     try {
-      // Checked fields win; extra fields (a panel's `agreement`, `panel`, ...) are kept.
+      // Checked fields win; extra fields an engine adds are kept, unchecked.
       return { ...out, ...unwrap(core.check(JSON.stringify(request), JSON.stringify(out))) };
     } catch (e) {
       throw tag(e);
@@ -281,110 +281,6 @@ export function mockEngine({ answers = {}, model = "mock", probabilitySource = "
         }
       }
       return { model, answers: out, input_tokens: null, probability_source: probabilitySource };
-    },
-  };
-}
-
-const invalidPanel = (message, field) =>
-  new LetsDecideError({ code: "InvalidRequest", message, retryable: false, details: { reason: "invalid_config", field } });
-
-/**
- * An engine that asks several models at once. `panels`: `{ [name]: { mode, members, rules } }`, or
- * a function (sync or async) returning it, read on every call so members can be toggled live.
- * Register it under any name (`engines: { panel: panelEngine(cfg) }`) and call `"panel/<name>"`.
- * See docs/concurrent-models.md.
- */
-export function panelEngine(panels) {
-  return {
-    async decide(name, request, { signal, decide } = {}) {
-      const p = (await resolve(panels))?.[name];
-      if (!p) throw invalidPanel(`no panel named \`${name}\``, "panels");
-      const { mode = "vote", members = [], rules = {} } = p;
-      const { timeout_ms: timeoutMs, ...mergeRules } = rules;
-      const active = members.filter((m) => m.enabled !== false);
-      if (!active.length) throw invalidPanel(`panel \`${name}\` has no enabled members`, "members");
-      if (mode !== "vote" && mode !== "race") throw invalidPanel(`unknown panel mode \`${mode}\``, "mode");
-      // Routing: a member with `questions` is asked only those. Checked before any call.
-      const routed = active.filter((m) => m.questions);
-      if (routed.length && mode === "race") throw invalidPanel("routing (`questions`) needs `vote` mode", "questions");
-      for (const m of routed) {
-        if (!m.questions.length || m.questions.some((q) => !Object.hasOwn(request.questions, q))) {
-          throw invalidPanel(`member \`${m.model}\`: \`questions\` must list questions of the request`, "questions");
-        }
-      }
-      const uncovered = Object.keys(request.questions).find((q) => !active.some((m) => !m.questions || m.questions.includes(q)));
-      if (uncovered) {
-        throw new LetsDecideError({
-          code: "InvalidRequest",
-          message: `no panel member is routed question \`${uncovered}\``,
-          retryable: false,
-          details: { reason: "invalid_config", field: "members", question: uncovered },
-        });
-      }
-      const ask = (m) => (m.questions
-        ? { ...request, questions: Object.fromEntries(m.questions.map((q) => [q, request.questions[q]])) }
-        : request);
-
-      // One controller aborts every member: on the caller's signal, the deadline, or a race win.
-      const ctrl = new AbortController();
-      const onAbort = () => ctrl.abort(signal.reason);
-      signal?.addEventListener("abort", onAbort, { once: true });
-      const timedOut = new LetsDecideError({ code: "ProviderUnavailable", message: "panel deadline passed", retryable: true });
-      let timer;
-      const deadline = new Promise((_, reject) => {
-        if (timeoutMs != null) timer = setTimeout(() => (reject(timedOut), ctrl.abort(timedOut)), timeoutMs);
-      });
-      deadline.catch(() => {});
-
-      const panel = {};
-      const run = async (m) => {
-        const t0 = Date.now();
-        const record = (entry) => (panel[m.model] = { ...entry, ms: Date.now() - t0 });
-        try {
-          const response = await Promise.race([decide(m.model, ask(m), { signal: ctrl.signal }), deadline]);
-          record({ response });
-          return { model: m.model, weight: m.weight ?? 1, questions: m.questions, response };
-        } catch (e) {
-          if (signal?.aborted) throw e; // the caller cancelled: not a member failure
-          if (e?.code === "Unsupported") {
-            record({ skipped: true });
-            return { model: m.model, weight: m.weight ?? 1, questions: m.questions, skipped: true };
-          }
-          const err = e instanceof LetsDecideError ? e : timedOut;
-          const error = { code: err.code, status: err.status, retry_after_ms: err.retryAfterMs, details: err.details };
-          record({ error: { code: err.code, details: err.details } });
-          return { model: m.model, weight: m.weight ?? 1, questions: m.questions, error, thrown: err };
-        }
-      };
-
-      try {
-        if (mode === "race") {
-          const runs = active.map(run);
-          const won = await Promise.any(runs.map((r) => r.then((o) => (o.response ? o : Promise.reject(o)))));
-          ctrl.abort();
-          return { ...won.response, panel: { ...panel } };
-        }
-        const outcomes = await Promise.all(active.map(run));
-        const members = outcomes.map(({ thrown, ...o }) => o);
-        try {
-          return { ...unwrap(core.merge(JSON.stringify(request), JSON.stringify(members), JSON.stringify(mergeRules))), panel };
-        } catch (e) {
-          throw Object.assign(e, { panel });
-        }
-      } catch (e) {
-        if (e instanceof AggregateError) {
-          // race: nobody answered. Throw the last failure, or Unsupported if every member was skipped.
-          const last = e.errors.reverse().find((o) => o.thrown)?.thrown;
-          throw Object.assign(
-            last ?? new LetsDecideError({ code: "Unsupported", message: "no panel member can take this request", retryable: false }),
-            { panel },
-          );
-        }
-        throw e;
-      } finally {
-        clearTimeout(timer);
-        signal?.removeEventListener("abort", onAbort);
-      }
     },
   };
 }

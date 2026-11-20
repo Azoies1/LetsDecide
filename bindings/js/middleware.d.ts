@@ -74,3 +74,25 @@ export function observe(hooks?: {
   onError?: (e: { model: string; request: DecisionRequest; error: unknown; durationMs: number }) => void;
   now?: () => number;
 }): Middleware;
+
+/** One model in a `fanOut`. `questions`: send it only these question ids (default: all). */
+export type FanOutMember = string | { model: string; enabled?: boolean; questions?: string[] };
+
+/** What happened to one member. `skipped`: it can't take the request (`Unsupported`, no call made). */
+export type FanOutResult = (
+  | { response: DecisionResponse }
+  | { error: LetsDecideError | Error }
+  | { skipped: true }
+  | { timedOut: true }
+) & { ms: number };
+
+/**
+ * Asks several models the same request at once and returns every result, keyed by model.
+ * Nothing is merged. Bad member lists throw `RangeError` before any call.
+ */
+export function fanOut(
+  decide: Decide,
+  request: DecisionRequest,
+  members: FanOutMember[],
+  options?: { timeoutMs?: number; signal?: AbortSignal },
+): Promise<Record<string, FanOutResult>>;

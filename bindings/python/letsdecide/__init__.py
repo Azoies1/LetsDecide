@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import asyncio
 import inspect
 import json
 import re
-import time
 from typing import Any
 
 from . import _core
@@ -21,7 +19,6 @@ __all__ = [
     "check",
     "classify_http",
     "mock_engine",
-    "panel_engine",
     "validate",
 ]
 
@@ -280,7 +277,7 @@ class _Base:
     @staticmethod
     def _post(name, request, out):
         try:
-            # Checked fields win; extra fields (a panel's `agreement`, `panel`, ...) are kept.
+            # Checked fields win; extra fields an engine adds are kept, unchecked.
             return {**out, **check(request, out)}
         except LetsDecideError as e:
             raise _from_user_code(name, e) from None
@@ -460,161 +457,3 @@ def mock_engine(answers=None, model="mock", probability_source="provider"):
     question with `answers[id]` if given, else a neutral answer (yes/no 0.5,
     first option, middle level). Works with `Client` and `AsyncClient`."""
     return _Mock(answers or {}, model, probability_source)
-
-
-class _Panel:
-    """See `panel_engine`."""
-
-    def __init__(self, panels):
-        self._panels = panels
-
-    def _config(self, name, panels):
-        p = (panels or {}).get(name)
-        if not p:
-            raise _invalid(f"no panel named `{name}`", reason="invalid_config", field="panels")
-        mode = p.get("mode", "vote")
-        members = [m for m in p.get("members", []) if m.get("enabled", True)]
-        rules = dict(p.get("rules", {}))
-        timeout = rules.pop("timeout_ms", None)
-        if not members:
-            raise _invalid(f"panel `{name}` has no enabled members", reason="invalid_config", field="members")
-        if mode not in ("vote", "race"):
-            raise _invalid(f"unknown panel mode `{mode}`", reason="invalid_config", field="mode")
-        return mode, members, rules, None if timeout is None else timeout / 1000
-
-    def decide(self, name, request, decide):
-        if inspect.iscoroutinefunction(decide):
-            return self._adecide(name, request, decide)
-        panels = self._panels() if callable(self._panels) else self._panels
-        mode, members, rules, timeout = self._config(name, panels)
-        _check_routing(mode, members, request)
-        # Sync clients call members in order; the deadline is checked between them.
-        start, outcomes, panel = time.monotonic(), [], {}
-        for m in members:
-            if timeout is not None and time.monotonic() - start >= timeout:
-                outcomes.append(_timed_out(m, panel, 0.0))
-                continue
-            t0 = time.monotonic()
-            try:
-                o = _answered(m, panel, t0, decide(m["model"], _ask(m, request)))
-            except LetsDecideError as e:
-                o = _failed(m, panel, t0, e)
-            outcomes.append(o)
-            if mode == "race" and "response" in o:
-                return {**o["response"], "panel": panel}
-        return _finish(mode, request, outcomes, rules, panel)
-
-    async def _adecide(self, name, request, decide):
-        panels = self._panels() if callable(self._panels) else self._panels
-        if inspect.isawaitable(panels):
-            panels = await panels
-        mode, members, rules, timeout = self._config(name, panels)
-        _check_routing(mode, members, request)
-        panel = {}
-
-        async def run(m):
-            t0 = time.monotonic()
-            try:
-                return _answered(m, panel, t0, await decide(m["model"], _ask(m, request)))
-            except LetsDecideError as e:
-                return _failed(m, panel, t0, e)
-
-        tasks = {asyncio.ensure_future(run(m)): m for m in members}
-        outcomes = {}
-        try:
-            pending, deadline = set(tasks), None if timeout is None else time.monotonic() + timeout
-            while pending:
-                left = None if deadline is None else max(0.0, deadline - time.monotonic())
-                done, pending = await asyncio.wait(pending, timeout=left, return_when=asyncio.FIRST_COMPLETED)
-                if not done:
-                    break  # deadline passed
-                for t in done:
-                    outcomes[t] = t.result()
-                    if mode == "race" and "response" in outcomes[t]:
-                        return {**outcomes[t]["response"], "panel": dict(panel)}
-        finally:
-            for t in tasks:
-                t.cancel()
-        ordered = [outcomes.get(t) or _timed_out(m, panel, timeout or 0.0) for t, m in tasks.items()]
-        return _finish(mode, request, ordered, rules, panel)
-
-
-def _check_routing(mode, members, request):
-    """Routing: a member with `questions` is asked only those. Checked before any call."""
-    asked = request["questions"]
-    routed = [m for m in members if m.get("questions") is not None]
-    if routed and mode == "race":
-        raise _invalid("routing (`questions`) needs `vote` mode", reason="invalid_config", field="questions")
-    for m in routed:
-        if not m["questions"] or any(q not in asked for q in m["questions"]):
-            raise _invalid(
-                f"member `{m['model']}`: `questions` must list questions of the request",
-                reason="invalid_config",
-                field="questions",
-            )
-    for q in asked:
-        if not any(m.get("questions") is None or q in m["questions"] for m in members):
-            raise _invalid(
-                f"no panel member is routed question `{q}`",
-                reason="invalid_config",
-                field="members",
-                question=q,
-            )
-
-
-def _ask(m, request):
-    if m.get("questions") is None:
-        return request
-    return {**request, "questions": {q: request["questions"][q] for q in m["questions"]}}
-
-
-def _entry(m, **outcome):
-    e = {"model": m["model"], "weight": m.get("weight", 1), **outcome}
-    if m.get("questions") is not None:
-        e["questions"] = m["questions"]
-    return e
-
-
-def _answered(m, panel, t0, response):
-    panel[m["model"]] = {"response": response, "ms": round((time.monotonic() - t0) * 1000)}
-    return _entry(m, response=response)
-
-
-def _failed(m, panel, t0, e):
-    ms = round((time.monotonic() - t0) * 1000)
-    if e.code == "Unsupported":
-        panel[m["model"]] = {"skipped": True, "ms": ms}
-        return _entry(m, skipped=True)
-    panel[m["model"]] = {"error": {"code": e.code, "details": e.details}, "ms": ms}
-    error = {"code": e.code, "status": e.status, "retry_after_ms": e.retry_after_ms, "details": e.details}
-    return _entry(m, error=error, thrown=e)
-
-
-def _timed_out(m, panel, waited):
-    e = LetsDecideError("ProviderUnavailable", "panel deadline passed", retryable=True)
-    return _failed(m, panel, time.monotonic() - waited, e)
-
-
-def _finish(mode, request, outcomes, rules, panel):
-    if mode == "race":
-        last = next((o["thrown"] for o in reversed(outcomes) if "thrown" in o), None)
-        err = last or LetsDecideError("Unsupported", "no panel member can take this request")
-        err.panel = panel
-        raise err
-    members = [{k: v for k, v in o.items() if k != "thrown"} for o in outcomes]
-    try:
-        merged = _unwrap(_core.merge(json.dumps(request), json.dumps(members), json.dumps(rules)))
-    except LetsDecideError as e:
-        e.panel = panel
-        raise
-    return {**merged, "panel": panel}
-
-
-def panel_engine(panels):
-    """An engine that asks several models at once. `panels`: `{name: {mode,
-    members, rules}}`, or a callable returning it (read on every call, so
-    members can be toggled live). Register it under any name
-    (`engines={"panel": panel_engine(cfg)}`) and call `"panel/<name>"`.
-    `AsyncClient` runs members concurrently; `Client` runs them in order.
-    See docs/concurrent-models.md."""
-    return _Panel(panels)

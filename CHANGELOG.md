@@ -7,14 +7,10 @@ All notable changes to this project are documented here. The format follows
 ## [Unreleased]
 
 ### Added
-- Panels: ask several models at once and combine their answers.
-  `panelEngine` (JS) and `panel_engine` (Python) register like any engine
-  (`"panel/<name>"`), with `vote` and `race` modes, per-member `enabled` and
-  `weight`, per-question routing (`questions`), live config, `quorum`
-  (per question), `timeout_ms`, and `merge: "vote" | "mean"`.
-  The pure `merge` lives in the core (`json::merge` in every binding). New
-  reasons `below_quorum` and `mixed_probability_source`; new
-  `probability_source` value `vote`. See `docs/concurrent-models.md`.
+- `fanOut` (JS) and `fan_out` (Python middleware): ask several models the same
+  request at once and get every raw result back, keyed by model. Supports
+  per-model `enabled`, per-question routing (`questions`), a deadline, and any
+  composed `decide`. Nothing is merged. See `docs/concurrent-models.md`.
 - Custom engines' extra response fields are now kept after the response check.
 - Kotlin and Swift bindings over UniFFI (`bindings/uniffi`, `bindings/kotlin`, `bindings/swift`).
 - Middleware (JS and async Python): `hedge`, `split`, `shadow` + `compare`,

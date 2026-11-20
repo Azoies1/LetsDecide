@@ -343,3 +343,30 @@ def test_client_capabilities_cover_builtin_and_custom():
     c = Client(providers={"acme": Acme()})
     assert c.capabilities("clef/x")["max_questions"] == 64
     assert c.capabilities("acme/x")["max_questions"] == 5
+
+
+def test_engine_extras_pass_through_checked_fields_win():
+    base = {
+        "model": "m",
+        "input_tokens": None,
+        "answers": {
+            "billing": {"kind": "yesno", "probability": 0.5},
+            "team": {"kind": "choice", "choice": "billing", "confidence": None, "probabilities": {}},
+        },
+    }
+
+    class Extra:
+        def decide(self, model, request):
+            return {**base, "trace": "t1"}  # no probability_source
+
+    class Bad:
+        def decide(self, model, request):
+            return {**base, "answers": {"billing": base["answers"]["billing"]}, "trace": "t1"}
+
+    c = Client(engines={"extra": Extra(), "bad": Bad()})
+    res = c.decide("extra/x", REQUEST)
+    assert res["trace"] == "t1"
+    assert res["probability_source"] == "provider"  # filled by the check
+    with pytest.raises(LetsDecideError) as e:
+        c.decide("bad/x", REQUEST)
+    assert e.value.code == "BadResponse"

@@ -51,7 +51,7 @@ export interface DecisionResponse {
   /** Present when every answer is `refused` and the provider gave a reason. */
   block_reason?: string;
   /** Never compare numbers across sources as if on one scale. */
-  probability_source: "provider" | "logprob" | "nli" | "vote";
+  probability_source: "provider" | "logprob" | "nli";
 }
 
 type Lazy<T> = T | (() => T | Promise<T>);
@@ -104,7 +104,7 @@ export type Reason =
   | "media_not_accepted" | "question_kind" | "unknown_provider" | "no_logprobs"
   | "multi_token_label" | "missing_config" | "invalid_config" | "name_taken"
   | "missing_answer" | "unexpected_answer" | "wrong_answer_kind" | "unknown_id"
-  | "invalid_number" | "below_quorum" | "mixed_probability_source";
+  | "invalid_number";
 
 /** Safe to log by construction: no keys, header values, input or bodies. */
 export interface ErrorDetails {
@@ -211,33 +211,3 @@ export function classifyHttp(response: { status: number; headers?: Record<string
 export function capabilities(model: string, options?: { wasm?: BufferSource | WebAssembly.Module }): Promise<Capabilities>;
 export function mockEngine(options?: { answers?: Record<string, Answer>; model?: string; probabilitySource?: "provider" | "logprob" | "nli" }): Engine;
 
-/** One panel: members asked together, combined by `rules`. See docs/concurrent-models.md. */
-export interface Panel {
-  /** `vote` (default): merge every answer. `race`: first answer wins, the rest are aborted. */
-  mode?: "vote" | "race";
-  /** `questions`: route only these question ids to the member (vote mode). Default: all. */
-  members: { model: string; enabled?: boolean; weight?: number; questions?: string[] }[];
-  rules?: {
-    /** Minimum members that must answer (default 1). */
-    quorum?: number;
-    /** Deadline for the whole panel; late members count as `ProviderUnavailable`. */
-    timeout_ms?: number;
-    /** `vote` (default): weighted majority. `mean`: average, same `probability_source` only. */
-    merge?: "vote" | "mean";
-  };
-}
-
-/** Per member: its response, its error (code and safe details), or `skipped` (can't take the request). */
-export type PanelReport = Record<string, ({ response: DecisionResponse } | { error: { code: ErrorCode; details?: ErrorDetails } } | { skipped: true }) & { ms: number }>;
-
-/** A panel's answer: merged (vote) or the winner's (race), plus how each member did. */
-export type PanelResponse = DecisionResponse & {
-  /** vote: per question, weighted share of voters that agreed with the merged answer. */
-  agreement?: Record<string, number>;
-  /** vote: questions where the voters were not unanimous. */
-  disagreed?: string[];
-  panel: PanelReport;
-};
-
-/** An engine that asks several models at once. `panels` may be a function, read on every call. */
-export function panelEngine(panels: Record<string, Panel> | (() => Record<string, Panel> | Promise<Record<string, Panel>>)): Engine;

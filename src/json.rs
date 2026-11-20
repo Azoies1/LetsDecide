@@ -5,7 +5,7 @@
 use crate::error::safe_serde_message;
 use crate::{
     estimate_cost_usd, http_error, Capabilities, Config, DecisionRequest, DecisionResponse,
-    Details, Error, ErrorCode, HttpResponse, Member, Outcome, Reason, Registry, Rules,
+    Details, Error, ErrorCode, HttpResponse, Registry,
 };
 use serde::{Deserialize, Serialize};
 
@@ -159,75 +159,4 @@ pub fn check(request: &str, response: &str) -> String {
 /// do. Returns the error object as `ok`, for the host to throw.
 pub fn classify_http(response: &str) -> String {
     run(|| Ok(ErrorOut::from(http_error(&http_in(response)?))))
-}
-
-/// A member's outcome as the host reports it: exactly one of `response`,
-/// `error` (a thrown `LetsDecideError`'s fields) or `skipped: true`.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct MemberIn {
-    model: String,
-    #[serde(default = "one")]
-    weight: f32,
-    questions: Option<Vec<String>>,
-    response: Option<DecisionResponse>,
-    error: Option<MemberError>,
-    #[serde(default)]
-    skipped: bool,
-}
-
-fn one() -> f32 {
-    1.0
-}
-
-/// The host's message is dropped: it may come from user code.
-#[derive(Deserialize)]
-struct MemberError {
-    code: String,
-    status: Option<u16>,
-    retry_after_ms: Option<u64>,
-    details: Option<Box<Details>>,
-}
-
-/// Panels: merges member outcomes (`[MemberIn]`) under `rules`
-/// (`{quorum?, merge?}`). Returns the merged response plus `agreement`
-/// and `disagreed`.
-pub fn merge(request: &str, members: &str, rules: &str) -> String {
-    run(|| {
-        let req: DecisionRequest = serde_json::from_str(request).map_err(invalid("request"))?;
-        let rules: Rules = serde_json::from_str(rules).map_err(invalid("rules"))?;
-        let raw: Vec<MemberIn> = serde_json::from_str(members).map_err(invalid("members"))?;
-        let members = raw
-            .into_iter()
-            .map(|m| {
-                let outcome = match (m.response, m.error, m.skipped) {
-                    (Some(r), None, false) => Outcome::Answered(r),
-                    (None, Some(e), false) => Outcome::Failed(Error {
-                        status: e.status,
-                        retry_after_ms: e.retry_after_ms,
-                        details: e.details,
-                        ..Error::new(
-                            ErrorCode::from_name(&e.code).unwrap_or(ErrorCode::ProviderError),
-                            "member failed",
-                        )
-                    }),
-                    (None, None, true) => Outcome::Skipped,
-                    _ => {
-                        return Err(Error::detailed(
-                            ErrorCode::InvalidRequest,
-                            "each member needs exactly one of `response`, `error`, `skipped`",
-                            Details::new(Reason::InvalidConfig).field("members"),
-                        ))
-                    }
-                };
-                Ok(Member {
-                    model: m.model,
-                    questions: m.questions,
-                    weight: m.weight,
-                    outcome,
-                })
-            })
-            .collect::<Result<Vec<_>, Error>>()?;
-        crate::merge(&req, &members, &rules)
-    })
 }
