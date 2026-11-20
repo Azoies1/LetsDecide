@@ -1,8 +1,7 @@
 # Concurrent models (panels)
 
 Status: **built** for Rust (`merge`), JS and Python (`panelEngine` /
-`panel_engine`). One item is still open: the cross-provider key guard (see
-[Keys](#keys)).
+`panel_engine`), including per-question routing.
 
 Ask several decision models the same request at once, turn each on or off, and
 set a few rules for how their answers combine. This builds on the
@@ -175,13 +174,13 @@ new Client({
 });
 ```
 
-**Open, awaiting the maintainer's decision: a guard so a key only goes to its own provider.** It would change behaviour for clients that use one top-level key for two providers today, so it needs a CHANGELOG "Changed" entry and an ADR extending 0006. Engines never see the
-config, so the guard can't live in the panel. `fallback` has the same leak
-today. The proposal, under discussion with the custom-providers work, puts it
-in the client: remember the first provider that received top-level
-credentials, and refuse (`InvalidRequest`, reason `missing_config`, field
-`byProvider`) to send them to a different provider that has no `byProvider`
-entry. Until it lands, set `byProvider` whenever a panel spans providers.
+**A key only goes to its own provider, by design.** Credentials and
+endpoints exist only per provider, under `byProvider`. Top-level `apiKey`,
+`accessToken`, `baseUrl`, `accountId` and `options` are being removed from
+every client (decided by the maintainer; the change is in progress in the
+custom-providers work). With no top-level key there is nothing to leak to
+another provider, so panels need no guard of their own. Top-level `headers`
+go to every provider and must never hold secrets.
 
 ## Deliberately not doing
 
