@@ -128,6 +128,9 @@ last in `build`.
 An engine answers the request itself. Use one for local models, rules, test
 doubles, or providers that need several calls.
 
+Extra fields in an engine's result (for example a panel's `agreement`) pass
+through unchanged and **unchecked**. The checked fields always win.
+
 ```js
 const local = {
   capabilities: { question_kinds: ["yesno", "choice"], locality: "device", probabilities: "logprob" },

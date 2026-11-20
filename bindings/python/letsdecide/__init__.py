@@ -322,7 +322,8 @@ class _Base:
     @staticmethod
     def _post(name, request, out):
         try:
-            return check(request, out)
+            # Checked fields win; extra fields an engine adds are kept, unchecked.
+            return {**out, **check(request, out)}
         except LetsDecideError as e:
             raise _from_user_code(name, e) from None
 

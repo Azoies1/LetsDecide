@@ -126,6 +126,9 @@ Numbered records live in [adr/](adr/README.md); the list below is the original s
   `src/gemini.rs`.
 - **`confidence_source`, not rescaling.** When a provider omits confidence we
   read it off the probabilities and say so; numbers are never changed.
+- **Several models: fan out, never merge.** `fanOut` returns every model's raw
+  answer. Voting, averaging and quorum are app policy and stay out of the core
+  (see [concurrent-models.md](concurrent-models.md)).
 - **`provider_extras` cannot overwrite.** It adds body fields the model lacks;
   replacing what an adapter sets would make the adapter lie.
 - **Prices are data.** `spec/prices.json` holds sourced prices with a date;

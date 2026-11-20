@@ -279,6 +279,23 @@ another model and measure agreement), `calibrate` + `fitIsotonic` (calibrated
 values next to raw ones) and `observe` (timing hooks). Python has the same set
 for `AsyncClient`. See [bindings/js/MIDDLEWARE.md](bindings/js/MIDDLEWARE.md).
 
+### Several models at once
+
+```js
+import { fanOut } from "letsdecide";
+
+const results = await fanOut(decide, request, [
+  "jev/jev-latest",
+  "gemini/gemini-decision-1",
+  { model: "openai/gpt-6-luna", enabled: false }, // switched off
+], { timeoutMs: 3000 });
+results["jev/jev-latest"]; // { response } | { error } | { skipped } | { timedOut }, plus ms
+```
+
+Every raw answer comes back, keyed by model; nothing is merged. Python:
+`fan_out` in `letsdecide.middleware`. See
+[docs/concurrent-models.md](docs/concurrent-models.md).
+
 ## Python
 
 ```python
