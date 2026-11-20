@@ -15,6 +15,12 @@ pub fn parse(model: String, request: String, response: String) -> String {
     letsdecide::json::parse(&model, &request, &response)
 }
 
+/// Names of the built-in providers, as `{"ok": [...]}`.
+#[uniffi::export]
+pub fn builtins() -> String {
+    letsdecide::json::builtins()
+}
+
 /// Capabilities of a built-in `"provider/model"`.
 #[uniffi::export]
 pub fn capabilities(model: String) -> String {

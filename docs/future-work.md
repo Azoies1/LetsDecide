@@ -44,7 +44,7 @@ Plan and decisions: [plan-custom-and-local-providers.md](plan-custom-and-local-p
 - [x] **P1** Core: `Registry`, `Capabilities`, `DecisionResponse::check`,
   error `details`, `probability_source`, `Config.headers/options`, JSON
   entry points.
-- [ ] **P2** Custom codecs and engines in JS and Python; built-in `mock`
+- [x] **P2** Custom codecs and engines in JS and Python; built-in `mock`
   engine; conformance kit over the golden fixture format; `ProviderError`
   wrapping of user exceptions; guide `docs/custom-providers.md`.
 - [ ] **P3** Dialects for the System One and OpenAI families.

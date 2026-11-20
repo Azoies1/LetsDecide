@@ -25,6 +25,12 @@ except LetsDecideError as e:
     print(e.code, e.status, e.retryable, e.retry_after_ms, e.details)  # details: safe to log
 ```
 
+Several providers? `by_provider={"jev": {"api_key": ...}, "gemini": {...}}` gives each its own settings.
+Custom providers: `providers={"acme": Acme()}` (codecs with `build` and
+`parse`) and `engines={"local": engine}` (`decide`); `mock_engine()` for
+tests; `letsdecide.conformance.check_provider` to test them. See
+[docs/custom-providers.md](../../docs/custom-providers.md).
+
 Async: `AsyncClient(...)` and `await client.decide(...)`. Change the model
 string to change provider. Pass `client=` to control proxies, transport and
 timeouts.
