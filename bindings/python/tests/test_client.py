@@ -5,6 +5,13 @@ import pytest
 
 from letsdecide import AsyncClient, Client, LetsDecideError
 
+ALL_KEYS = {
+    "jev": {"api_key": "k"},
+    "openai": {"api_key": "k"},
+    "gemini": {"api_key": "k"},
+    "clef": {"api_key": "k", "account_id": "a"},
+}
+
 REQUEST = {
     "input": "Charged twice.",
     "questions": {
@@ -43,7 +50,7 @@ def test_decide_builds_sends_and_parses():
             },
         )
 
-    out = client(handler, api_key="k").decide("gemini/gemini-decision-1", REQUEST)
+    out = client(handler, by_provider=ALL_KEYS).decide("gemini/gemini-decision-1", REQUEST)
     assert sent["url"] == "https://generativelanguage.googleapis.com/v1beta/decisions"
     assert sent["key"] == "k"
     assert sent["body"]["model"] == "gemini-decision-1"
@@ -59,7 +66,7 @@ def test_switching_provider_is_one_string():
         urls.append(str(req.url))
         return httpx.Response(401, json={})
 
-    c = client(handler, api_key="k", account_id="a")
+    c = client(handler, by_provider=ALL_KEYS)
     for m in ["jev/jev-latest", "openai/gpt-6-luna", "clef/clef-flash"]:
         with pytest.raises(LetsDecideError) as e:
             c.decide(m, REQUEST)
@@ -72,7 +79,7 @@ def test_switching_provider_is_one_string():
 
 
 def test_errors_are_typed_and_carry_retry_info():
-    c = client(lambda r: httpx.Response(429, json={}, headers={"retry-after": "2"}), api_key="k")
+    c = client(lambda r: httpx.Response(429, json={}, headers={"retry-after": "2"}), by_provider=ALL_KEYS)
     with pytest.raises(LetsDecideError) as e:
         c.decide("jev/jev-latest", REQUEST)
     assert e.value.code == "RateLimited"
@@ -93,7 +100,7 @@ def test_invalid_request_makes_no_network_call():
 
 async def test_async_client():
     transport = httpx.MockTransport(lambda r: httpx.Response(401, json={}))
-    c = AsyncClient(client=httpx.AsyncClient(transport=transport), api_key="k")
+    c = AsyncClient(client=httpx.AsyncClient(transport=transport), by_provider=ALL_KEYS)
     with pytest.raises(LetsDecideError) as e:
         await c.decide("jev/jev-latest", REQUEST)
     assert e.value.code == "Auth"
@@ -107,7 +114,10 @@ def test_clef_oauth_token_callable_is_refreshed_per_request():
         return httpx.Response(401, json={})
 
     n = iter(range(1, 10))
-    c = client(handler, account_id="a", access_token=lambda: f"tok{next(n)}")
+    c = client(
+        handler,
+        by_provider={"clef": {"account_id": "a", "access_token": lambda: f"tok{next(n)}"}},
+    )
     for _ in range(2):
         with pytest.raises(LetsDecideError) as e:
             c.decide("clef/clef-flash", REQUEST)
@@ -119,7 +129,7 @@ def test_gemini_and_clef_fail_fast_without_credentials():
     def handler(req):
         raise AssertionError("must not send")
 
-    c = client(handler, account_id="a")
+    c = client(handler, by_provider={"clef": {"account_id": "a"}})
     for model in ("gemini/gemini-decision-1", "clef/clef-flash"):
         with pytest.raises(LetsDecideError) as e:
             c.decide(model, REQUEST)
@@ -133,7 +143,11 @@ def test_config_headers_are_sent_and_replace_same_named_ones():
         sent.update(req.headers)
         return httpx.Response(401, json={})
 
-    c = client(handler, api_key="k", headers={"x-gateway": "g", "Authorization": "Token t"})
+    c = client(
+        handler,
+        by_provider={"jev": {"api_key": "k"}},
+        headers={"x-gateway": "g", "Authorization": "Token t"},
+    )
     with pytest.raises(LetsDecideError):
         c.decide("jev/jev-latest", REQUEST)
     assert sent["x-gateway"] == "g"

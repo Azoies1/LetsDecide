@@ -16,7 +16,7 @@ function setup(script) {
     const [status, body = {}, headers = {}] = script.shift();
     return new Response(JSON.stringify(body), { status, headers });
   };
-  return { urls, client: new Client({ apiKey: "k" }, { fetch, wasm }) };
+  return { urls, client: new Client({ byProvider: { jev: { apiKey: "k" }, openai: { apiKey: "k" }, gemini: { apiKey: "k" }, clef: { apiKey: "k", accountId: "a" } } }, { fetch, wasm }) };
 }
 const sleeps = [];
 const sleep = async (ms) => void sleeps.push(ms);

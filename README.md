@@ -64,8 +64,12 @@ println!("{:?}", decision.answers["positive"]);
 | `systemone/<model>` | Any System One compatible server | `base_url`, optional `api_key` |
 | `<yours>/<model>` | Your own provider, see [Custom providers](#custom-providers) | yours |
 
-Every client also takes `headers` (sent last; replace same-named adapter
-headers, e.g. for a gateway) and `options` (free-form, for custom providers).
+The last column is that provider's entry in the client's `byProvider` map
+(Python `by_provider`; Rust: the `Config` you pass to `build`). Credentials and
+endpoints are only ever set per provider, so a key can't reach another
+provider. Each entry may also set `headers` and `options` (for custom
+providers). Client-wide `headers` (tracing, gateways) go to every provider and
+must not hold secrets.
 
 `input` is a string or any JSON value. Providers that only take text get JSON
 serialised to a string.
@@ -78,15 +82,23 @@ serialised to a string.
   or a plain API token (`api_key`). The token wins if both are set. Clef also needs
   your Cloudflare `account_id`.
 - **Tokens expire, the core does not refresh them** (it does no I/O). Run your OAuth
-  flow in your app, then in JS pass `accessToken: async () => freshToken()`, in Python
-  `access_token=callable`, or in Rust set `Config.access_token` before each `build`.
-  The function is called on every request, so refresh logic lives in one place.
+  flow in your app, then set `accessToken: async () => freshToken()` in that
+  provider's entry (Python `"access_token": callable`), or in Rust set
+  `Config.access_token` before each `build`. The function is called on every
+  request, so refresh logic lives in one place.
+- **Keys are per provider.** A top-level `apiKey` is refused (`InvalidRequest`,
+  `invalid_config`): with fallback, hedging or panels one client talks to several
+  providers, and a shared key would be sent to all of them.
 - Keys and tokens are redacted from `Debug` output and never appear in errors.
 
 ```js
-// Clef with OAuth, Gemini with a key
-const clef = new Client({ accountId: ACCOUNT_ID, accessToken: () => getToken() });
-const gemini = new Client({ apiKey: process.env.GEMINI_API_KEY });
+// One client, two providers, each with its own credentials
+const client = new Client({
+  byProvider: {
+    clef: { accountId: ACCOUNT_ID, accessToken: () => getToken() },
+    gemini: { apiKey: process.env.GEMINI_API_KEY },
+  },
+});
 ```
 
 ### Media
@@ -172,11 +184,11 @@ const acme = {
   build: (model, req, cfg) => ({ url: "https://api.acme.ai/v1/decide", headers: { authorization: `Bearer ${cfg.apiKey}` }, body: JSON.stringify(toAcme(model, req)) }),
   parse: async (req, res) => { if (res.status >= 300) throw await classifyHttp(res); return fromAcme(JSON.parse(res.body), req); },
 };
-const client = new Client({ apiKey }, { providers: { acme }, engines: { mock: mockEngine() } });
+const client = new Client({ byProvider: { acme: { apiKey } } }, { providers: { acme }, engines: { mock: mockEngine() } });
 await client.decide("acme/acme-decide-2", request); // or "mock/any" in tests
 ```
 
-Python: `Client(api_key=..., providers={"acme": Acme()}, engines={"mock": mock_engine()})`.
+Python: `Client(by_provider={"acme": {"api_key": ...}}, providers={"acme": Acme()}, engines={"mock": mock_engine()})`.
 Rust:
 
 ```rust,no_run
@@ -218,7 +230,7 @@ edge runtimes. The wrapper sends requests with `fetch`.
 ```js
 import { Client } from "letsdecide";
 
-const client = new Client({ apiKey: process.env.GEMINI_API_KEY });
+const client = new Client({ byProvider: { gemini: { apiKey: process.env.GEMINI_API_KEY } } });
 
 const result = await client.decide("gemini/gemini-decision-1", {
   input: "I was charged twice.",
@@ -258,7 +270,8 @@ for `AsyncClient`. See [bindings/js/MIDDLEWARE.md](bindings/js/MIDDLEWARE.md).
 import os
 from letsdecide import Client  # not published yet; build from bindings/python
 
-res = Client(api_key=os.environ["JEV_API_KEY"]).decide("jev/jev-latest", request)
+client = Client(by_provider={"jev": {"api_key": os.environ["JEV_API_KEY"]}})
+res = client.decide("jev/jev-latest", request)
 ```
 
 Sync `Client` and `AsyncClient`, both over `httpx`; middleware in

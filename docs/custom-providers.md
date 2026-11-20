@@ -8,7 +8,7 @@ Pick the lightest option that works:
 
 | You have | Use | Code |
 |---|---|---|
-| A server that speaks System One exactly | `systemone/<model>` + `baseUrl` | none |
+| A server that speaks System One exactly | `systemone/<model>` + `byProvider.systemone.baseUrl` | none |
 | The same, behind a gateway or with other auth | add `headers` | none |
 | Any HTTP decision API | a **codec**: `build` + `parse` | two functions |
 | Something that isn't one HTTP call (local model, rules, a mock) | an **engine**: `decide` | one function |
@@ -39,7 +39,8 @@ const acme = {
   capabilities: { max_questions: 50, media: ["image/png", "image/jpeg"] },
 
   build(model, request, config) {
-    // config: { apiKey, accessToken, baseUrl, accountId, headers, options }
+    // config: this provider's own settings (byProvider.acme), plus shared headers:
+    // { apiKey, accessToken, baseUrl, accountId, headers, options }
     return {
       url: `${config.baseUrl ?? "https://api.acme.ai"}/v1/decide`,
       headers: { authorization: `Bearer ${config.apiKey}`, "content-type": "application/json" },
@@ -55,7 +56,7 @@ const acme = {
   },
 };
 
-const client = new Client({ apiKey: process.env.ACME_KEY }, { providers: { acme } });
+const client = new Client({ byProvider: { acme: { apiKey: process.env.ACME_KEY } } }, { providers: { acme } });
 await client.decide("acme/acme-decide-2", request);
 ```
 
@@ -65,10 +66,10 @@ deployment or anything else your API needs there.
 
 ### Settings per provider
 
-Using several providers from one client? Give each its own settings with
-`byProvider` (Python: `by_provider`). Each entry is merged over the top-level
-fields **for that provider only**, so a key meant for one provider never goes
-to another. Any value may be a function, called on every request:
+Every provider, custom or built-in, gets its settings from its own entry in
+`byProvider` (Python: `by_provider`), so a key meant for one provider never
+goes to another. Top-level credentials are refused. Any value may be a
+function, called on every request:
 
 ```js
 const client = new Client(
@@ -77,7 +78,8 @@ const client = new Client(
 );
 ```
 
-Your codec receives its merged slice as `config`.
+Your codec receives its own entry as `config`, with the client-wide `headers`
+added (its own headers win on a name clash).
 
 ### Python
 
@@ -101,7 +103,7 @@ class Acme:
         body = json.loads(response["body"])
         return {"model": body["model"], "answers": ..., "input_tokens": None}
 
-client = Client(api_key="...", providers={"acme": Acme()})
+client = Client(by_provider={"acme": {"api_key": "..."}}, providers={"acme": Acme()})
 ```
 
 `AsyncClient` takes the same codec; `build` and `parse` may also be `async`.

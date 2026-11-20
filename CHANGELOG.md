@@ -43,8 +43,10 @@ All notable changes to this project are documented here. The format follows
   `classifyHttp` / `classify_http`, `capabilities`, `BUILTIN`.
 - Conformance kit: `letsdecide/conformance` (`checkProvider`) and
   `letsdecide.conformance` (`check_provider`), over the golden fixture format.
-- `byProvider` / `by_provider`: settings per provider, merged over the
-  top-level ones for that provider only; any value may be a function.
+- `byProvider` / `by_provider` (JS, Python) and `ProviderSettings` (Kotlin,
+  Swift): settings per provider prefix; a provider only sees its own entry;
+  any value may be a function, called per request. Client-wide `headers` go to
+  every provider (ADR 0014).
 - Engines get a `decide` callback to call other models through the client,
   capped at `MAX_DEPTH` nested calls; `client.capabilities(model)` for any
   model, built-in or custom.
@@ -55,6 +57,10 @@ All notable changes to this project are documented here. The format follows
 ### Changed
 - **Breaking:** `images` is now `media`.
 - **Breaking:** `Provider` has a required `capabilities(model)` method.
+- **Breaking:** clients take credentials and endpoints only per provider
+  (`byProvider`). A top-level `apiKey`, `accessToken`, `baseUrl`, `accountId`
+  or `options` is refused with `InvalidRequest` (`invalid_config`), so a key
+  can never be sent to another provider by fallback, hedging or panels.
 - **Breaking:** `Error` has a `details` field; `DecisionResponse` has
   `probability_source`.
 - Built-in responses are now checked; a malformed reply is `BadResponse`.

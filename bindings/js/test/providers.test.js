@@ -55,7 +55,7 @@ test("BUILTIN matches the core", () => {
 test("a custom codec gets config, headers, validation and response checks", async () => {
   let sent;
   const fetch = async (url, init) => ((sent = { url, ...init }), respond(200, acmeReply)());
-  const client = new Client({ apiKey: "k", headers: { "x-gw": "g" } }, { fetch, wasm, providers: { acme } });
+  const client = new Client({ byProvider: { acme: { apiKey: "k" } }, headers: { "x-gw": "g" } }, { fetch, wasm, providers: { acme } });
   const out = await client.decide("acme/acme-2", request);
   assert.equal(sent.url, "https://api.acme.test/v1/acme-2");
   assert.equal(sent.headers.authorization, "Bearer k");
@@ -196,7 +196,7 @@ test("conformance kit accepts the core's own golden fixtures for a built-in shim
   assert.equal(report.failed, 0, JSON.stringify(report.results.filter((r) => !r.ok)));
 });
 
-test("byProvider gives each provider its own settings", async () => {
+test("each provider only sees its own byProvider entry", async () => {
   const seen = {};
   const fetch = async (url, init) => {
     seen[new URL(url).host] = init.headers;
@@ -204,16 +204,22 @@ test("byProvider gives each provider its own settings", async () => {
   };
   let n = 0;
   const client = new Client(
-    { apiKey: "top", byProvider: { gemini: { apiKey: () => `g${++n}` }, acme: { apiKey: "a", headers: { "x-t": "1" } } } },
+    {
+      headers: { "x-trace": "t", "x-t": "shared" },
+      byProvider: { gemini: { apiKey: () => `g${++n}` }, acme: { apiKey: "a", headers: { "x-t": "1" } } },
+    },
     { fetch, wasm, providers: { acme } },
   );
   await assert.rejects(client.decide("gemini/gemini-decision-1", request));
   await assert.rejects(client.decide("jev/jev-latest", request));
   await assert.rejects(client.decide("acme/m", request));
   assert.equal(seen["generativelanguage.googleapis.com"]["x-goog-api-key"], "g1");
-  assert.equal(seen["api.typesafe.ai"].authorization, "Bearer top");
+  // jev has no entry: no key at all, never another provider's.
+  assert.equal(seen["api.typesafe.ai"].authorization, undefined);
+  assert.ok(!JSON.stringify(seen["api.typesafe.ai"]).includes("g1"));
   assert.equal(seen["api.acme.test"].authorization, "Bearer a");
-  assert.equal(seen["api.acme.test"]["x-t"], "1");
+  assert.equal(seen["api.acme.test"]["x-t"], "1"); // own header wins over shared
+  for (const h of Object.values(seen)) assert.equal(h["x-trace"], "t"); // shared headers go everywhere
 });
 
 test("engines can call other models through the client", async () => {
@@ -242,4 +248,19 @@ test("client.capabilities covers built-in and custom providers", async () => {
   const client = new Client({}, { fetch: async () => {}, wasm, providers: { acme } });
   assert.equal((await client.capabilities("clef/x")).max_questions, 64);
   assert.equal((await client.capabilities("acme/x")).max_questions, 5);
+});
+
+test("credentials are only accepted per provider", () => {
+  const opts = { wasm, fetch: async () => {} };
+  for (const k of ["apiKey", "accessToken", "baseUrl", "accountId", "options"]) {
+    assert.throws(() => new Client({ [k]: "x" }, opts), (e) => {
+      assert.equal(e.code, "InvalidRequest");
+      assert.deepEqual(e.details, { reason: "invalid_config", field: k });
+      assert.match(e.message, /byProvider/);
+      assert.ok(!e.message.includes('"x"'));
+      return true;
+    });
+  }
+  assert.throws(() => new Client({ apikey: "x" }, opts), { code: "InvalidRequest" });
+  assert.throws(() => new Client({ byProvider: { jev: { apikey: "x" } } }, opts), (e) => e.details.provider === "jev");
 });

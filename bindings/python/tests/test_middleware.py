@@ -65,7 +65,14 @@ def scripted(script):
         status, body, headers = (script.pop(0) + [{}, {}])[:3]
         return httpx.Response(status, json=body, headers=headers)
 
-    return urls, AsyncClient(client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), api_key="k")
+    return urls, AsyncClient(client=httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+        by_provider={
+            "jev": {"api_key": "k"},
+            "openai": {"api_key": "k"},
+            "gemini": {"api_key": "k"},
+            "clef": {"api_key": "k", "account_id": "a"},
+        },
+    )
 
 
 async def test_retry_then_succeed_and_retry_after():

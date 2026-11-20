@@ -14,7 +14,10 @@ pip install "letsdecide[httpx]"   # or bring your own client: pip install letsde
 ```python
 from letsdecide import Client, LetsDecideError
 
-client = Client(api_key="...")  # also: access_token= (OAuth string or callable, e.g. for Clef), base_url=, account_id=, headers=, options=, client=httpx.Client(...)
+# Settings per provider: a key only ever goes to its own provider.
+client = Client(by_provider={"jev": {"api_key": "..."}})
+# Entries also take access_token (string or callable, e.g. Clef OAuth), base_url,
+# account_id, headers, options. Client also takes shared headers= and client=httpx.Client(...).
 try:
     out = client.decide("jev/jev-latest", {
         "input": "Great product, arrived late.",
@@ -25,7 +28,6 @@ except LetsDecideError as e:
     print(e.code, e.status, e.retryable, e.retry_after_ms, e.details)  # details: safe to log
 ```
 
-Several providers? `by_provider={"jev": {"api_key": ...}, "gemini": {...}}` gives each its own settings.
 Custom providers: `providers={"acme": Acme()}` (codecs with `build` and
 `parse`) and `engines={"local": engine}` (`decide`); `mock_engine()` for
 tests; `letsdecide.conformance.check_provider` to test them. See
@@ -46,7 +48,8 @@ timeouts.
 from letsdecide import AsyncClient
 from letsdecide.middleware import compose, fallback, retry, split
 
-decide = compose(AsyncClient(api_key="..."), split(), fallback(["jev/jev-latest"]), retry())
+keys = {"clef": {"api_key": "...", "account_id": "..."}, "jev": {"api_key": "..."}}
+decide = compose(AsyncClient(by_provider=keys), split(), fallback(["jev/jev-latest"]), retry())
 out = await decide("clef/clef-flash", request)
 out["attempts"], out.get("fell_back_from"), out.get("parts")
 ```

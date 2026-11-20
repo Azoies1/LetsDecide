@@ -56,39 +56,67 @@ public struct URLSessionTransport: Transport {
     }
 }
 
-/// One request shape for every decision API. Requests and responses are JSON
-/// dictionaries in the canonical shape (see the README).
-public final class Client: Sendable {
-    let apiKey: String?
-    let accessToken: (@Sendable () async throws -> String)?
-    let baseUrl: String?
-    let accountId: String?
-    let transport: Transport
+/// One provider's settings. A provider only ever sees its own entry, so a key
+/// can never reach another provider.
+public struct ProviderSettings: Sendable {
+    public let apiKey: String?
+    /// OAuth token provider (Clef), called on every request so the host can
+    /// refresh it. Wins over `apiKey`.
+    public let accessToken: (@Sendable () async throws -> String)?
+    public let baseUrl: String?
+    public let accountId: String?
+    /// Headers for this provider only; win over the client's shared headers
+    /// with the same name.
+    public let headers: [(String, String)]
 
-    /// - Parameter accessToken: OAuth token provider (Clef), called on every
-    ///   request so the host can refresh it. Wins over `apiKey`.
     public init(
         apiKey: String? = nil,
         accessToken: (@Sendable () async throws -> String)? = nil,
         baseUrl: String? = nil,
         accountId: String? = nil,
-        transport: Transport = URLSessionTransport()
+        headers: [(String, String)] = []
     ) {
         self.apiKey = apiKey
         self.accessToken = accessToken
         self.baseUrl = baseUrl
         self.accountId = accountId
+        self.headers = headers
+    }
+}
+
+/// One request shape for every decision API. Requests and responses are JSON
+/// dictionaries in the canonical shape (see the README).
+public final class Client: Sendable {
+    let byProvider: [String: ProviderSettings]
+    let headers: [(String, String)]
+    let transport: Transport
+
+    /// - Parameter byProvider: settings per provider prefix, e.g.
+    ///   `["gemini": ProviderSettings(apiKey: key)]`.
+    /// - Parameter headers: sent to every provider (tracing, gateways). Never secrets.
+    public init(
+        byProvider: [String: ProviderSettings] = [:],
+        headers: [(String, String)] = [],
+        transport: Transport = URLSessionTransport()
+    ) {
+        self.byProvider = byProvider
+        self.headers = headers
         self.transport = transport
     }
 
     /// `model`: `"provider/model"`, e.g. `"clef/clef-flash"`. Throws `LetsDecideError`.
     public func decide(_ model: String, _ request: [String: Any]) async throws -> [String: Any] {
         let req = try json(request)
+        let prefix = String(model.split(separator: "/", maxSplits: 1).first ?? "")
+        let own = byProvider[prefix] ?? ProviderSettings()
+        let ownNames = Set(own.headers.map { $0.0.lowercased() })
+        let merged = headers.filter { !ownNames.contains($0.0.lowercased()) } + own.headers
         var config: [String: Any] = [:]
-        config["api_key"] = apiKey
-        config["access_token"] = try await accessToken?()
-        config["base_url"] = baseUrl
-        config["account_id"] = accountId
+        config["api_key"] = own.apiKey
+        config["access_token"] = try await own.accessToken?()
+        config["base_url"] = own.baseUrl
+        config["account_id"] = own.accountId
+        config["headers"] = merged.map { [$0.0, $0.1] }
         let built = try unwrap(LetsDecideFFI.build(model: model, request: req, config: try json(config)))
         let headers = (built["headers"] as? [[String]] ?? []).map { ($0[0], $0[1]) }
         guard let url = URL(string: built["url"] as? String ?? "") else {
