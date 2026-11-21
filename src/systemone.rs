@@ -6,8 +6,8 @@
 //! Verified against: Jev's OpenAPI spec (api.typesafe.ai/openapi.json), Clef's
 //! Cloudflare docs, and Google's official Gemini Decisions pages (read
 //! 2026-11-19):
-//! - https://aistudio.google.com/api-reference/decisions/create-decision
-//! - https://aistudio.google.com/docs/decisions-api
+//! - <https://aistudio.google.com/api-reference/decisions/create-decision>
+//! - <https://aistudio.google.com/docs/decisions-api>
 //!
 //! Checked live (2026-11-19): Gemini replies carry no top-level `model` (so
 //! `DecisionResponse.model` is `None`; it is still parsed if present). Still

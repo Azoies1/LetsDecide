@@ -6,10 +6,7 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-### Changed
-- Scope: the library stays a thin access layer. The planned label scorer,
-  `letsdecide-serve` sidecar, bundled engines, `escalate` middleware and
-  Kotlin/Swift engine slots are dropped (ADR 0016).
+## [0.3.0] - 2026-11-21
 
 ### Added
 - `fanOut` (JS) and `fan_out` (Python middleware): ask several models the same
@@ -79,6 +76,10 @@ All notable changes to this project are documented here. The format follows
   `resolveDialect` / `resolve_dialect`; core `json::dialect`,
   `resolve_dialect`, `build_dialect`, `parse_dialect` (ADR 0015,
   `docs/dialects.md`).
+- `ErrorCode::as_str`, the stable wire name of an error code.
+- JS `retry({ maxMs })` caps every wait, including a server `Retry-After`
+  (default 30 s).
+- README and LICENSE in the npm and PyPI packages.
 
 ### Changed
 - **Breaking:** `SystemOne` and `OpenAi` are replaced by `Dialect`
@@ -93,6 +94,10 @@ All notable changes to this project are documented here. The format follows
 - **Breaking:** `Error` has a `details` field; `DecisionResponse` has
   `probability_source`.
 - Built-in responses are now checked; a malformed reply is `BadResponse`.
+- Scope: the library stays a thin access layer. The planned label scorer,
+  `letsdecide-serve` sidecar, bundled engines, `escalate` middleware and
+  Kotlin/Swift engine slots are dropped (ADR 0016).
+- Python clients default to a 60 s timeout (httpx's own default is 5 s).
 
 ### Fixed
 - Error messages no longer quote values from request or response JSON
@@ -113,6 +118,7 @@ All notable changes to this project are documented here. The format follows
 - Image input.
 - Golden fixtures for every provider.
 
-[Unreleased]: https://github.com/azoies1/letsdecide/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/azoies1/letsdecide/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/azoies1/letsdecide/releases/tag/v0.3.0
 [0.2.0]: https://github.com/azoies1/letsdecide/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/azoies1/letsdecide/releases/tag/v0.1.0

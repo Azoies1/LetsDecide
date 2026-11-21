@@ -86,11 +86,12 @@ format without notice. The shape it would take:
 
 ## Release
 
-Not published yet. Before the first release:
+First release is 0.3.0 on crates.io, npm and PyPI, from one tag (see
+[releasing.md](releasing.md)). Still open: Maven and SwiftPM.
 
-- [ ] Final package name ("Arbiter" is taken; `letsdecide` for now).
-- [ ] Version bump (`images` → `media` is breaking: 0.3.0) in `Cargo.toml`,
-  `bindings/*/Cargo.toml`, `package.json`, `pyproject.toml`,
-  `build.gradle.kts`.
-- [ ] Publish: crates.io, npm (with `pkg/`), PyPI wheels (maturin), Maven
-  Central, a SwiftPM release with the XCFramework attached.
+- [x] Package name: `letsdecide` on crates.io, npm and PyPI.
+- [x] Version bump to 0.3.0 (`images` → `media` is breaking) in every manifest;
+  the release workflow refuses a tag that doesn't match all of them.
+- [x] Publish: crates.io, npm (with `pkg/`), PyPI wheels (maturin).
+- [ ] Maven Central (`bindings/kotlin`).
+- [ ] A SwiftPM release with the XCFramework attached (`bindings/swift`).

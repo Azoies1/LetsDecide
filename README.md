@@ -12,13 +12,22 @@ question types (yes/no, choice, score) but disagree on wire format.
 - **Tiny.** Two dependencies (`serde`, `serde_json`). No async runtime.
 - **Honest.** Provider limits surface as errors, not silent degradation.
 
-> **Status: early (v0.2), not yet published** to crates.io, npm, PyPI, Maven
-> or SwiftPM. See [docs/future-work.md](docs/future-work.md#release).
+> **Status: early (v0.3).** Published on crates.io, npm and PyPI; Kotlin
+> (Maven) and Swift (SwiftPM) are not published yet. See
+> [docs/future-work.md](https://github.com/azoies1/letsdecide/blob/HEAD/docs/future-work.md#release).
 > Adapters for Jev, Clef, Gemini, OpenAI and any
 > System One compatible server. Bindings for Rust, TypeScript/WASM, Python,
 > Kotlin and Swift. Wire formats come from public docs; see
 > [Verification status](#verification-status). Image input works on all but
 > `systemone`; audio, video and documents on Gemini only. See the [roadmap](#roadmap).
+
+## Install
+
+```sh
+cargo add letsdecide              # Rust
+npm install letsdecide            # JavaScript / TypeScript
+pip install "letsdecide[httpx]"   # Python
+```
 
 ## Usage (Rust)
 
@@ -145,7 +154,7 @@ for options not modelled yet. A key the adapter already sets is rejected, never
 overwritten.
 
 The bindings add `estimated_cost_usd` to a response when the model's price is
-in [`spec/prices.json`](spec/prices.json) (OpenAI, Clef, Gemini; Jev publishes
+in [`spec/prices.json`](https://github.com/azoies1/letsdecide/blob/HEAD/spec/prices.json) (OpenAI, Clef, Gemini; Jev publishes
 none). In Rust: `estimate_cost_usd(model, input_tokens)`. It is an estimate of direct
 provider billing: regional premiums, long-context multipliers and cache
 discounts are not applied, and a `base_url` proxy or gateway may bill differently.
@@ -174,7 +183,7 @@ descriptions, bodies or config values; tests check this.
 Not supported yet? Plug it in, in JS, Python or Rust. Your provider gets the
 same request validation, response checks, error codes and middleware as the
 built-ins. Full guide, engines, the mock engine and the conformance kit:
-[docs/custom-providers.md](docs/custom-providers.md).
+[docs/custom-providers.md](https://github.com/azoies1/letsdecide/blob/HEAD/docs/custom-providers.md).
 
 ```js
 import { Client, classifyHttp, mockEngine } from "letsdecide";
@@ -235,11 +244,11 @@ new Client(cfg, {
 });
 ```
 
-See [docs/dialects.md](docs/dialects.md).
+See [docs/dialects.md](https://github.com/azoies1/letsdecide/blob/HEAD/docs/dialects.md).
 
 ## JavaScript / TypeScript
 
-The same core compiles to WebAssembly (146 KB gzipped) for Node, browsers and
+The same core compiles to WebAssembly (about 160 KB gzipped) for Node, browsers and
 edge runtimes. The wrapper sends requests with `fetch`.
 
 ```js
@@ -277,7 +286,7 @@ Plain `(next) => decide` wrappers: `retry` (backoff, `Retry-After`),
 `split` (over-limit requests in parts), `shadow` + `compare` (mirror traffic to
 another model and measure agreement), `calibrate` + `fitIsotonic` (calibrated
 values next to raw ones) and `observe` (timing hooks). Python has the same set
-for `AsyncClient`. See [bindings/js/MIDDLEWARE.md](bindings/js/MIDDLEWARE.md).
+for `AsyncClient`. See [bindings/js/MIDDLEWARE.md](https://github.com/azoies1/letsdecide/blob/HEAD/bindings/js/MIDDLEWARE.md).
 
 ### Several models at once
 
@@ -294,7 +303,7 @@ results["jev/jev-latest"]; // { response } | { error } | { skipped } | { timedOu
 
 Every raw answer comes back, keyed by model; nothing is merged. Python:
 `fan_out` in `letsdecide.middleware`. See
-[docs/concurrent-models.md](docs/concurrent-models.md).
+[docs/concurrent-models.md](https://github.com/azoies1/letsdecide/blob/HEAD/docs/concurrent-models.md).
 
 ## Python
 
@@ -307,14 +316,14 @@ res = client.decide("jev/jev-latest", request)
 ```
 
 Sync `Client` and `AsyncClient`, both over `httpx`; middleware in
-`letsdecide.middleware`. See [bindings/python/README.md](bindings/python/README.md).
+`letsdecide.middleware`. See [bindings/python/README.md](https://github.com/azoies1/letsdecide/blob/HEAD/bindings/python/README.md).
 
 ## Kotlin and Swift
 
 Both use the same core through UniFFI (`bindings/uniffi`), with thin clients
 over `java.net.http` and `URLSession`. See
-[bindings/kotlin/README.md](bindings/kotlin/README.md) and
-[bindings/swift/README.md](bindings/swift/README.md).
+[bindings/kotlin/README.md](https://github.com/azoies1/letsdecide/blob/HEAD/bindings/kotlin/README.md) and
+[bindings/swift/README.md](https://github.com/azoies1/letsdecide/blob/HEAD/bindings/swift/README.md).
 
 ## Verification status
 
@@ -323,16 +332,16 @@ over `java.net.http` and `URLSession`. See
 | OpenAI | OpenAI's API reference |
 | Jev | Jev's official OpenAPI spec (`api.typesafe.ai/openapi.json`) |
 | Clef | Cloudflare's official Clef docs |
-| Gemini | Google's [create-decision](https://aistudio.google.com/api-reference/decisions/create-decision) and [decisions-api](https://aistudio.google.com/docs/decisions-api) pages, read 2026-11-19, and live calls (all kinds, CSV, URI image). Open points: [docs/future-work.md](docs/future-work.md) |
+| Gemini | Google's [create-decision](https://aistudio.google.com/api-reference/decisions/create-decision) and [decisions-api](https://aistudio.google.com/docs/decisions-api) pages, read 2026-11-19, and live calls (all kinds, CSV, URI image). Open points: [docs/future-work.md](https://github.com/azoies1/letsdecide/blob/HEAD/docs/future-work.md) |
 
 Fixtures in `tests/fixtures/` encode these shapes. Corrections welcome. CI
 makes no real provider calls; live contract tests are an optional addition
-(see [docs/future-work.md](docs/future-work.md#optional-live-contract-tests)).
+(see [docs/future-work.md](https://github.com/azoies1/letsdecide/blob/HEAD/docs/future-work.md#optional-live-contract-tests)).
 
 ## Roadmap
 
 Built in small steps; each lands only when needed. Details in
-[docs/design.md](docs/design.md).
+[docs/design.md](https://github.com/azoies1/letsdecide/blob/HEAD/docs/design.md).
 
 - [x] **M1** Canonical model, sans-IO core, System One adapter, golden fixtures
 - [x] **M2** OpenAI and Gemini adapters, refusals
@@ -343,13 +352,14 @@ Built in small steps; each lands only when needed. Details in
 - [x] **M5** Evaluation: shadow mode with agreement, calibration (isotonic fit, Brier score)
 - [x] Extras: OpenAI image URLs, `confidence_source`, cost estimates, `provider_extras`
 - [ ] Optional: live contract tests (not built: each run spends real tokens)
-- [ ] First release (crates.io, npm, PyPI, Maven, SwiftPM)
-- [x] **M6** Custom providers ([plan](docs/plan-custom-and-local-providers.md)). Local-model runtime work (P4–P6) dropped, see [ADR 0016](docs/adr/0016-thin-access-layer.md). Done: registry, capabilities, response checks, error details, `headers`/`options` (P1); custom codecs and engines in JS and Python, mock engine, conformance kit (P2); per-provider credentials; dialects, with every built-in as data (P3)
+- [x] First release: crates.io, npm and PyPI (v0.3)
+- [ ] Maven and SwiftPM
+- [x] **M6** Custom providers ([plan](https://github.com/azoies1/letsdecide/blob/HEAD/docs/plan-custom-and-local-providers.md)). Local-model runtime work (P4–P6) dropped, see [ADR 0016](https://github.com/azoies1/letsdecide/blob/HEAD/docs/adr/0016-thin-access-layer.md). Done: registry, capabilities, response checks, error details, `headers`/`options` (P1); custom codecs and engines in JS and Python, mock engine, conformance kit (P2); per-provider credentials; dialects, with every built-in as data (P3)
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md). Adding a System One or OpenAI style provider is one JSON dialect plus fixtures; anything else is one file plus fixtures.
+See [CONTRIBUTING.md](https://github.com/azoies1/letsdecide/blob/HEAD/CONTRIBUTING.md). Adding a System One or OpenAI style provider is one JSON dialect plus fixtures; anything else is one file plus fixtures.
 
 ## Licence
 
-[Apache-2.0](LICENSE)
+[Apache-2.0](https://github.com/azoies1/letsdecide/blob/HEAD/LICENSE)

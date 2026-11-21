@@ -107,9 +107,9 @@ any compatible server.
 
 Numbered records live in [adr/](adr/README.md); the list below is the original summary.
 
-- **Rust core.** One codebase for every provider mapping; bindings are generated
-  later (UniFFI, napi-rs, PyO3, wasm-bindgen). Fallback if too heavy: TypeScript
-  + Swift sharing the same JSON fixtures.
+- **Rust core.** One codebase for every provider mapping. Bindings are thin
+  wrappers: wasm-bindgen (JS), PyO3 (Python) and UniFFI (Kotlin, Swift).
+  Fallback if too heavy: TypeScript + Swift sharing the same JSON fixtures.
 - **`BTreeMap` for questions.** Deterministic output; no extra crate.
 - **Providers are dialects** (ADR 0015). Every built-in is data in
   `spec/dialects/*.json`; the two wire families are code. Media encodings
@@ -177,6 +177,9 @@ Numbered records live in [adr/](adr/README.md); the list below is the original s
   provider. Client-wide headers are for non-secrets.
 - **Thin access layer** (ADR 0016): the library reaches decision APIs; it
   does not run models.
+- **Package name: `letsdecide`**, the same on crates.io, npm and PyPI (all three
+  were free on 2026-11-19). `letsdecide-wasm` and `letsdecide-py` are build
+  inputs and stay `publish = false`.
 - **Licence: Apache-2.0** (patent grant).
 
 ## Planned
@@ -194,7 +197,6 @@ Custom providers: P1–P3 in
   disagree on safety blocks (200 + `prompt_feedback.block_reason` vs HTTP 400
   + `error.code`; both are handled); the 429 body (spend limits give
   `RESOURCE_EXHAUSTED`). Office documents are untested live.
-- Final package name: "Arbiter" is taken on GitHub; `letsdecide` for now.
 - Should a hosted proxy built on this be a later product?
 
 ## Security

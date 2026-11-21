@@ -9,6 +9,9 @@ Rust core builds and parses; `httpx` sends. Returns plain dicts.
 pip install "letsdecide[httpx]"   # or bring your own client: pip install letsdecide
 ```
 
+Python 3.10+. Prebuilt wheels for Linux (glibc and musl), macOS and Windows, so
+no Rust toolchain is needed.
+
 ## Usage
 
 ```python
@@ -31,18 +34,24 @@ except LetsDecideError as e:
 Custom providers: `providers={"acme": Acme()}` (codecs with `build` and
 `parse`) and `engines={"local": engine}` (`decide`); `mock_engine()` for
 tests; `letsdecide.conformance.check_provider` to test them. See
-[docs/custom-providers.md](../../docs/custom-providers.md).
+[docs/custom-providers.md](https://github.com/azoies1/letsdecide/blob/HEAD/docs/custom-providers.md).
 
 Async: `AsyncClient(...)` and `await client.decide(...)`. Change the model
-string to change provider. Pass `client=` to control proxies, transport and
-timeouts.
+string to change provider. Both clients default to a 60 s timeout; pass
+`client=` to control proxies, transport and timeouts.
+
+## More
+
+Model strings, media input, the answer and error reference, and the other
+bindings (Rust, JavaScript): <https://github.com/azoies1/letsdecide#readme>.
+Apache-2.0.
 
 ## Middleware (async)
 
 `letsdecide.middleware` wraps `AsyncClient.decide`: `retry`, `fallback`,
 `hedge`, `split`, `shadow`, `calibrate`, `observe`, plus `compare`,
 `fit_isotonic` and `brier_score`. Same behaviour as the JS binding; see
-[MIDDLEWARE.md](../js/MIDDLEWARE.md).
+[MIDDLEWARE.md](https://github.com/azoies1/letsdecide/blob/HEAD/bindings/js/MIDDLEWARE.md).
 
 ```python
 from letsdecide import AsyncClient

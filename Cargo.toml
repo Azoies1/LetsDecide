@@ -1,6 +1,6 @@
 [package]
 name = "letsdecide"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "One request shape for every decision API (Jev, Clef, OpenAI, Gemini). Sans-IO core."
 license = "Apache-2.0"
