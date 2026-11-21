@@ -1,0 +1,19 @@
+{
+  "_doc": "Cloudflare Clef (Workers AI). Source: Cloudflare's Clef docs. Replies are wrapped in Cloudflare's {result, success} envelope.",
+  "family": "systemone",
+  "base_url": "https://api.cloudflare.com",
+  "path": "/client/v4/accounts/{account_id}/ai/run/@cf/cloudflare/{model}",
+  "input_field": "state",
+  "media_encoding": "data_url_list",
+  "envelope": "result",
+  "capabilities": {
+    "max_questions": 64,
+    "max_levels": 10,
+    "max_media": 4,
+    "media": [
+      "image/png",
+      "image/jpeg",
+      "image/webp"
+    ]
+  }
+}

@@ -11,7 +11,7 @@ categories = ["api-bindings"]
 exclude = ["bindings/", ".github/"]
 
 [workspace]
-members = ["bindings/wasm", "bindings/python"]
+members = ["bindings/wasm", "bindings/python", "bindings/uniffi"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }

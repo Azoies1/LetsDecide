@@ -26,7 +26,7 @@ jobs:
         run: |
           tag="${GITHUB_REF_NAME#v}"
           bad=0
-          for f in Cargo.toml bindings/wasm/Cargo.toml bindings/python/Cargo.toml bindings/python/pyproject.toml; do
+          for f in Cargo.toml bindings/wasm/Cargo.toml bindings/python/Cargo.toml bindings/uniffi/Cargo.toml bindings/python/pyproject.toml bindings/kotlin/build.gradle.kts; do
             v=$(grep -m1 '^version' "$f" | cut -d'"' -f2)
             [ "$v" = "$tag" ] || { echo "::error::$f is $v, tag is $tag"; bad=1; }
           done

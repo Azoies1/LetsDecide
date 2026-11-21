@@ -1,42 +1,86 @@
 export type Json = string | number | boolean | null | Json[] | { [k: string]: Json };
 
 export interface Media {
-  /** `image/*`, `audio/*`, `video/*` or `application/pdf`; non-images: Gemini only. */
+  /** `image/*`, `audio/*`, `video/*` or a document type; non-images: Gemini only. */
   mime_type: string;
-  /** Base64, no `data:` prefix. */
-  data: string;
+  /** Base64, no `data:` prefix. Give `data` or `uri`, not both. */
+  data?: string;
+  /** Gemini: `https://` URL or Files API URI (not YouTube or `gs://`). OpenAI: public `http(s)://` image URL. */
+  uri?: string;
+  /** Gemini only, passed through (`resolution`, `fps`, `page_options`, ...). */
+  options?: Record<string, Json>;
 }
 
 export type Question =
-  | { kind: "yesno"; instructions: string }
+  | {
+      kind: "yesno";
+      instructions: string;
+      /** What yes / no mean. Gemini only. */
+      yes_description?: string;
+      no_description?: string;
+    }
   | { kind: "choice"; instructions: string; options: Record<string, string> }
   | { kind: "score"; instructions: string; levels: { id: string; description: string }[] };
 
 export interface DecisionRequest {
   input: Json;
   media?: Media[];
-  /** Ids match `[a-z0-9_]{1,64}`. */
+  /** Ids match `[a-z0-9_]{1,64}`; Gemini also allows `[A-Za-z0-9_-]` keys and wider option ids. */
   questions: Record<string, Question>;
+  /** Extra top-level body fields, sent as-is. Keys the adapter sets are rejected. */
+  provider_extras?: Record<string, Json>;
 }
+
+/** `provider`: sent by the provider. `probabilities`: not sent, read off the chosen option or top level. */
+export type ConfidenceSource = "provider" | "probabilities";
 
 export type Answer =
   | { kind: "yesno"; probability: number }
-  | { kind: "choice"; choice: string; confidence: number | null; probabilities: Record<string, number> }
-  | { kind: "score"; value: number; confidence: number | null; probabilities: Record<string, number> }
+  | { kind: "choice"; choice: string; confidence: number | null; confidence_source?: ConfidenceSource; probabilities: Record<string, number> }
+  | { kind: "score"; value: number; confidence: number | null; confidence_source?: ConfidenceSource; probabilities: Record<string, number> }
   | { kind: "refused" };
 
 export interface DecisionResponse {
   model: string | null;
   answers: Record<string, Answer>;
   input_tokens: number | null;
+  /** From `spec/prices.json`, when the model's price is known. An estimate. */
+  estimated_cost_usd?: number;
+  cached_tokens?: number;
+  thought_tokens?: number;
+  /** Present when every answer is `refused` and the provider gave a reason. */
+  block_reason?: string;
+  /** Never compare numbers across sources as if on one scale. */
+  probability_source: "provider" | "logprob" | "nli";
 }
 
+type Lazy<T> = T | (() => T | Promise<T>);
+
+/** One provider's settings. A provider only ever sees its own entry. */
+export interface ProviderSettings {
+  /** Static key, e.g. `gemini` (sent as `x-goog-api-key`), `jev`, `openai`. */
+  apiKey?: Lazy<string>;
+  /** OAuth token (e.g. `clef`); wins over `apiKey`. A function is called per request, so you can refresh it. */
+  accessToken?: Lazy<string>;
+  /** Required for `systemone`; overrides the default endpoint elsewhere. */
+  baseUrl?: Lazy<string>;
+  /** Required for `clef`. */
+  accountId?: Lazy<string>;
+  /** Headers for this provider only; win over shared `headers` with the same name. */
+  headers?: Lazy<Record<string, string> | [string, string][]>;
+  /** Free-form settings for custom providers; built-ins ignore them. */
+  options?: Lazy<Record<string, Json>>;
+}
+
+/**
+ * Credentials and endpoints are per provider, so a key can never reach another provider.
+ * Any other top-level field is an `InvalidRequest` (`invalid_config`).
+ */
 export interface ClientConfig {
-  apiKey?: string;
-  /** Required for `systemone/*`. */
-  baseUrl?: string;
-  /** Required for `clef/*`. */
-  accountId?: string;
+  /** Settings per provider prefix, e.g. `{ gemini: { apiKey }, clef: { accessToken, accountId } }`. */
+  byProvider?: Record<string, ProviderSettings>;
+  /** Sent to every provider (tracing, gateways). Never put secrets here. */
+  headers?: Lazy<Record<string, string> | [string, string][]>;
 }
 
 export interface ClientOptions {
@@ -44,6 +88,14 @@ export interface ClientOptions {
   fetch?: typeof fetch;
   /** WASM bytes or module, where the runtime can't `fetch` a file URL (e.g. Node). */
   wasm?: BufferSource | WebAssembly.Module;
+  /** Custom HTTP providers by name. */
+  providers?: Record<string, Codec>;
+  /** Custom engines by name. */
+  engines?: Record<string, Engine>;
+  /** Providers described as data, by name. See `docs/dialects.md`. */
+  dialects?: Record<string, DialectSpec>;
+  /** Built-in names that `providers`, `engines` or `dialects` may override. */
+  replace?: string[];
 }
 
 export type ErrorCode =
@@ -52,13 +104,41 @@ export type ErrorCode =
   | "Auth"
   | "RateLimited"
   | "ProviderUnavailable"
-  | "BadResponse";
+  | "BadResponse"
+  | "ProviderError";
+
+export type Reason =
+  | "too_many_questions" | "too_many_options" | "too_many_levels" | "too_many_media"
+  | "media_not_accepted" | "question_kind" | "unknown_provider" | "no_logprobs"
+  | "multi_token_label" | "missing_config" | "invalid_config" | "name_taken"
+  | "missing_answer" | "unexpected_answer" | "wrong_answer_kind" | "unknown_id"
+  | "invalid_number";
+
+/** Safe to log by construction: no keys, header values, input or bodies. */
+export interface ErrorDetails {
+  reason: Reason;
+  provider?: string;
+  /** Question id. */
+  question?: string;
+  /** Option or level id. */
+  id?: string;
+  limit?: number;
+  actual?: number;
+  mime_type?: string;
+  /** Config field name, never its value. */
+  field?: string;
+}
 
 export class LetsDecideError extends Error {
   code: ErrorCode;
   status?: number;
   retryAfterMs?: number;
   retryable: boolean;
+  details?: ErrorDetails;
+  /** `ProviderError` only: the custom provider's name. */
+  provider?: string;
+  /** `ProviderError` only: what user code threw. Non-enumerable, so loggers don't print it. */
+  original?: unknown;
 }
 
 export function initialize(wasm?: BufferSource | WebAssembly.Module): Promise<unknown>;
@@ -67,5 +147,101 @@ export class Client {
   constructor(config?: ClientConfig, options?: ClientOptions);
   /** `model` is `"provider/model"`, e.g. `"clef/clef-flash"`. */
   decide(model: string, request: DecisionRequest, options?: { signal?: AbortSignal }): Promise<DecisionResponse>;
+  /** Capabilities of any `"provider/model"`, built-in or custom. */
+  capabilities(model: string): Promise<Capabilities>;
 }
 export * from "./middleware";
+
+export type Capabilities = {
+  max_questions?: number | null;
+  max_options?: number | null;
+  max_levels?: number | null;
+  max_media?: number | null;
+  /** Accepted MIME types; `type/*` matches a kind. Empty or missing: no media. */
+  media?: string[];
+  /** `yesno`, `choice`, `score`. Empty or missing: all. */
+  question_kinds?: string[];
+  /** Allow Gemini-style ids `[A-Za-z0-9_-]{1,128}`. */
+  wide_ids?: boolean;
+  /** Yes/no questions may carry `yes_description` / `no_description`. */
+  yesno_descriptions?: boolean;
+  probabilities?: "provider" | "logprob" | "nli";
+  locality?: "cloud" | "network" | "device";
+};
+
+/** Config as a custom codec sees it. `accessToken` is already resolved. */
+export interface ProviderConfig {
+  apiKey?: string;
+  accessToken?: string;
+  baseUrl?: string;
+  accountId?: string;
+  headers: [string, string][];
+  options: Record<string, Json>;
+}
+
+export interface HttpRequestOut {
+  method?: string;
+  url: string;
+  headers?: Record<string, string> | [string, string][];
+  body?: string;
+}
+
+export interface HttpReply {
+  status: number;
+  headers: [string, string][];
+  body: string;
+}
+
+/** A custom HTTP provider. Keep `build` and `parse` pure; the client sends the request. */
+export interface Codec {
+  build(model: string, request: DecisionRequest, config: ProviderConfig): HttpRequestOut | Promise<HttpRequestOut>;
+  /** Throw `LetsDecideError` (e.g. from `classifyHttp`) for failures. */
+  parse(request: DecisionRequest, response: HttpReply): DecisionResponse | Promise<DecisionResponse>;
+  /** Checked before `build`. Missing: only the request itself is validated. */
+  capabilities?: Capabilities;
+}
+
+/** A custom provider that isn't one HTTP round trip: local models, mocks, rules. */
+export interface Engine {
+  /** `options.decide` calls any model through the same client (custom or built-in), e.g. a panel's members. */
+  decide(
+    model: string,
+    request: DecisionRequest,
+    options: { signal?: AbortSignal; decide: (model: string, request: DecisionRequest, options?: { signal?: AbortSignal }) => Promise<DecisionResponse> },
+  ): Promise<DecisionResponse>;
+  capabilities?: Capabilities;
+}
+
+export const BUILTIN: readonly string[];
+/** How deep engines may call back into the client. */
+export const MAX_DEPTH: number;
+export function validate(request: DecisionRequest, capabilities?: Capabilities | null, options?: { wasm?: BufferSource | WebAssembly.Module }): Promise<void>;
+export function check(request: DecisionRequest, response: unknown, options?: { wasm?: BufferSource | WebAssembly.Module }): Promise<DecisionResponse>;
+export function classifyHttp(response: { status: number; headers?: Record<string, string> | [string, string][]; body?: string }, options?: { wasm?: BufferSource | WebAssembly.Module }): Promise<LetsDecideError>;
+export function capabilities(model: string, options?: { wasm?: BufferSource | WebAssembly.Module }): Promise<Capabilities>;
+export function mockEngine(options?: { answers?: Record<string, Answer>; model?: string; probabilitySource?: "provider" | "logprob" | "nli" }): Engine;
+
+/** A provider described as data. `extends` a built-in and set what differs; objects merge, arrays replace. */
+export interface DialectSpec {
+  extends: "jev" | "clef" | "gemini" | "openai" | "systemone";
+  /** Default endpoint; a provider's `baseUrl` setting overrides it. */
+  base_url?: string;
+  /** Placeholders: `{model}`, `{account_id}`, `{options.<name>}` (from the provider's `options`). */
+  path?: string;
+  /** Scheme inferred: `authorization` gets `Bearer <key>`, any other header the raw key. */
+  auth?: { header?: string; scheme?: "bearer" | "raw"; required?: boolean };
+  /** `state`: JSON input as-is. `input`: JSON input as text (Gemini style). */
+  input_field?: "state" | "input";
+  media_encoding?: "none" | "jev_assets" | "data_url_list" | "typed_blocks" | "content_parts";
+  /** Replies wrapped under this key, e.g. `"result"`. */
+  envelope?: string;
+  /** HTTP 400 `error.code` values that mean "input blocked": every answer is `refused`. */
+  blocked_error_codes?: string[];
+  capabilities?: Capabilities;
+}
+
+/** A dialect after `extends` is applied, as `dialect()` and `resolveDialect()` return it. */
+export type ResolvedDialect = Omit<DialectSpec, "extends"> & { family: "systemone" | "openai" };
+
+export function dialect(name: string, options?: { wasm?: BufferSource | WebAssembly.Module }): Promise<ResolvedDialect>;
+export function resolveDialect(spec: DialectSpec, options?: { wasm?: BufferSource | WebAssembly.Module }): Promise<ResolvedDialect>;

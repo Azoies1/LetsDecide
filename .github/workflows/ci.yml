@@ -34,3 +34,21 @@ jobs:
       - run: pip install maturin pytest pytest-asyncio httpx
       - run: maturin build --out dist && pip install dist/*.whl && pytest
         working-directory: bindings/python
+  kotlin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - uses: gradle/actions/setup-gradle@v4
+        with: { gradle-version: "8.14.3" }
+      - run: ./gen.sh && gradle test
+        working-directory: bindings/kotlin
+  swift:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: ./build.sh && swift test
+        working-directory: bindings/swift

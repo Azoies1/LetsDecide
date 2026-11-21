@@ -1,7 +1,7 @@
 # letsdecide (JavaScript / TypeScript)
 
 One request shape for every decision API (Jev, Clef, OpenAI, Gemini). The core
-is Rust compiled to WebAssembly (about 100 KB gzipped); it builds the HTTP request
+is Rust compiled to WebAssembly (about 160 KB gzipped); it builds the HTTP request
 and parses the reply, and `fetch` sends it. You call providers directly with
 your own keys. There is no gateway.
 
@@ -18,7 +18,10 @@ npm install letsdecide
 ```js
 import { Client } from "letsdecide";
 
-const client = new Client({ apiKey: process.env.GEMINI_API_KEY });
+// Settings go per provider, so a key is only ever sent to its own provider.
+const client = new Client({
+  byProvider: { gemini: { apiKey: process.env.GEMINI_API_KEY } },
+});
 
 const result = await client.decide("gemini/gemini-decision-1", {
   input: "I was charged twice.",
@@ -46,7 +49,7 @@ import { Client } from "letsdecide";
 const wasm = readFileSync(
   new URL("./pkg/letsdecide_wasm_bg.wasm", import.meta.resolve("letsdecide")),
 );
-const client = new Client({ apiKey: "..." }, { wasm });
+const client = new Client({ byProvider: { gemini: { apiKey: "..." } } }, { wasm });
 ```
 
 ### Errors
@@ -57,10 +60,12 @@ Failures throw `LetsDecideError` with `code`, `status`, `retryable` and
 ### Retry and fallback
 
 ```js
-import { Client } from "letsdecide";
-import { compose, retry, fallback } from "letsdecide/middleware.js";
+import { Client, compose, retry, fallback } from "letsdecide";
 
-const decide = compose(new Client({ apiKey: "..." }), fallback(["jev/jev-latest"]), retry());
+const client = new Client({
+  byProvider: { clef: { apiKey: "...", accountId: "..." }, jev: { apiKey: "..." } },
+});
+const decide = compose(client, fallback(["jev/jev-latest"]), retry());
 const res = await decide("clef/clef-flash", request);
 ```
 

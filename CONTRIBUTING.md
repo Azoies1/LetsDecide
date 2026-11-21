@@ -34,19 +34,37 @@ maturin develop && pytest
 
 ## Adding a provider
 
-0. If the provider speaks the System One shape, add a preset to `src/systemone.rs`
-   instead of a new file.
-1. Add `src/<provider>.rs` implementing `Provider` (`build`, `parse`).
+0. If it speaks the System One or OpenAI shape, it's a **dialect**: add
+   `spec/dialects/<provider>.json` (see [docs/dialects.md](docs/dialects.md))
+   and list it in `BUILTIN_SOURCES` (`src/dialect.rs`). No new code. If it
+   needs a new media encoding or similar that a second provider would also
+   use, add it as a named strategy in `src/dialect.rs`.
+1. Otherwise add `src/<provider>.rs` implementing `Provider` (`capabilities`, `build`, `parse`).
    - Pure: no I/O, no clock, no global state.
-   - Validate with `DecisionRequest::validate()`, then check provider limits.
-   - Return `Unsupported` for what the provider can't do. Never degrade silently.
-2. Register it in `resolve` (`src/provider.rs`).
+   - Declare limits and media in `capabilities()`; call
+     `self.capabilities(model).check(req)?` first in `build`, then `apply_headers` last.
+   - Return `Unsupported` for what the provider can't do, with `Details` and a
+     `Reason`. Never degrade silently.
+   - Error messages and details: names, ids, counts and MIME types only.
+     Never input, descriptions, bodies, keys or config values.
+2. Add its prefix to `BUILTIN` (`src/provider.rs`) and, for a codec, to
+   `builtin()`. List it in the changelog: new built-in names can clash with
+   users' custom ones.
 3. Add golden fixtures in `tests/fixtures/<provider>/`: all three question
    types, a refusal or error case, and the limits. Each file holds the canonical
    request, the exact HTTP request, a recorded response and the expected result.
 4. Add a row to the README model table.
 
 Nothing else should change. If it does, the design needs discussion first.
+
+Not ready to upstream it? Users can register it themselves, as a dialect or
+a codec (see the README's "Custom providers").
+
+## A provider changed its API
+
+Fix its `spec/dialects/<provider>.json` (and fixtures). Until a release ships,
+users can patch it themselves: `dialects: { gemini: { extends: "gemini", ... } }`
+with `replace: ["gemini"]`.
 
 ## Conventions
 
@@ -66,12 +84,13 @@ version. Pushing a tag builds and checks everything first, and only then
 publishes, so a failed build never leaves a half-published release.
 
 1. Set the new version in `Cargo.toml`, `bindings/wasm/Cargo.toml`,
-   `bindings/python/Cargo.toml`, `bindings/js/package.json` and
-   `bindings/python/pyproject.toml`, then run `cargo check` to refresh `Cargo.lock`.
+   `bindings/python/Cargo.toml`, `bindings/uniffi/Cargo.toml`,
+   `bindings/js/package.json`, `bindings/python/pyproject.toml` and
+   `bindings/kotlin/build.gradle.kts`, then run `cargo check` to refresh `Cargo.lock`.
 2. Move the `[Unreleased]` entries in `CHANGELOG.md` under the new version and
    update the compare links.
 3. Merge, then `git tag v<version> && git push origin v<version>`. The tag must
-   match all five versions or the release stops before building.
+   match all seven versions or the release stops before building.
 
 Publishing is opt-in per registry and needs credentials set up once. Where to
 create them, the first-release steps and troubleshooting are in

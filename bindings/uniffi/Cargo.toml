@@ -1,0 +1,19 @@
+[package]
+name = "letsdecide-uniffi"
+version = "0.3.0"
+edition = "2021"
+description = "Swift and Kotlin bindings for letsdecide (UniFFI)"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+name = "letsdecide_uniffi"
+crate-type = ["cdylib", "staticlib", "lib"]
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "src/bin/uniffi-bindgen.rs"
+
+[dependencies]
+letsdecide = { path = "../.." }
+uniffi = { version = "0.29", features = ["cli"] }

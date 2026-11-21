@@ -1,0 +1,21 @@
+{
+  "_doc": "USD per 1M input tokens. Decision APIs bill input only. Estimates: regional premiums, long-context multipliers and cache discounts are not applied. Update `checked` when you re-read the source.",
+  "models": {
+    "openai/gpt-6-luna": {
+      "usd_per_million_input_tokens": 0.10,
+      "source": "https://developers.openai.com/api/docs/guides/decisions",
+      "checked": "2026-11-19"
+    },
+    "clef/clef-flash": {
+      "usd_per_million_input_tokens": 0.038,
+      "source": "https://developers.cloudflare.com/workers-ai/models/clef-flash/",
+      "checked": "2026-11-19"
+    },
+    "gemini/gemini-decision-1": {
+      "usd_per_million_input_tokens": 0.10,
+      "source": "https://aistudio.google.com/docs/pricing#gemini-decision",
+      "checked": "2026-11-19",
+      "note": "Paid tier. Read from a truncated copy of the page; confirm."
+    }
+  }
+}

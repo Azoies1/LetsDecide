@@ -82,14 +82,15 @@ creating it. Guide: <https://docs.pypi.org/trusted-publishers/creating-a-project
 ## Making a release
 
 1. Set the new version in `Cargo.toml`, `bindings/wasm/Cargo.toml`,
-   `bindings/python/Cargo.toml`, `bindings/js/package.json` and
-   `bindings/python/pyproject.toml`. Run `cargo check` to refresh `Cargo.lock`.
+   `bindings/python/Cargo.toml`, `bindings/uniffi/Cargo.toml`,
+   `bindings/js/package.json`, `bindings/python/pyproject.toml` and
+   `bindings/kotlin/build.gradle.kts`. Run `cargo check` to refresh `Cargo.lock`.
 2. Move the `[Unreleased]` entries in `CHANGELOG.md` under the new version and
    update the compare links.
 3. Merge to the default branch, then tag it:
    `git tag v<version> && git push origin v<version>`.
 4. Watch the **Release** run under the repository's *Actions* tab. The tag must
-   match all five versions, or the run stops before building.
+   match all seven versions, or the run stops before building.
 5. Check each registry: `cargo add letsdecide`, `npm view letsdecide`,
    `pip download letsdecide --no-deps`.
 

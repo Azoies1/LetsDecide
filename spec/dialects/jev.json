@@ -1,0 +1,18 @@
+{
+  "_doc": "Jev System One API. Source: Jev's OpenAPI spec (api.typesafe.ai/openapi.json).",
+  "family": "systemone",
+  "base_url": "https://api.typesafe.ai",
+  "path": "/v1/systemone",
+  "auth": {
+    "required": false
+  },
+  "input_field": "state",
+  "media_encoding": "jev_assets",
+  "capabilities": {
+    "max_levels": 10,
+    "media": [
+      "image/png",
+      "image/jpeg"
+    ]
+  }
+}

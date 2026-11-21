@@ -1,5 +1,7 @@
-//! Adapter for the System One wire family: Jev, Clef, Gemini and compatible
-//! servers. One shape, four presets.
+//! The System One wire family: Jev, Clef, Gemini and compatible servers.
+//! What differs between them is data in their [`Dialect`]
+//! (`spec/dialects/*.json`): endpoint, auth, input field, media encoding,
+//! envelope, block codes and limits.
 //!
 //! Verified against: Jev's OpenAPI spec (api.typesafe.ai/openapi.json), Clef's
 //! Cloudflare docs, and Google's official Gemini Decisions pages (read
@@ -7,219 +9,77 @@
 //! - <https://aistudio.google.com/api-reference/decisions/create-decision>
 //! - <https://aistudio.google.com/docs/decisions-api>
 //!
-//! Still unverified for Gemini: whether replies carry a top-level `model`
-//! (parsed if present), and which of the two documented safety-block shapes
-//! (200 + `prompt_feedback.block_reason`, or HTTP 400 + `error.code`) applies
-//! when. Both are handled.
+//! Checked live (2026-11-19): Gemini replies carry no top-level `model` (so
+//! `DecisionResponse.model` is `None`; it is still parsed if present). Still
+//! unverified: which of the two documented safety-block shapes (200 +
+//! `prompt_feedback.block_reason`, or HTTP 400 + `error.code`) applies when.
+//! Both are handled.
 
-use crate::provider::{http_error, post};
+use crate::dialect::{Dialect, InputField, MediaEncoding, JEV_IMAGE_HEADER};
+use crate::error::safe_serde_message;
+use crate::gemini;
+use crate::model::confidence;
+use crate::provider::encode;
 use crate::*;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 
-/// Presets: `jev`, `clef`, `gemini`, `systemone` (custom base URL).
-pub struct SystemOne {
-    preset: Preset,
-}
-
-#[derive(Clone, Copy, PartialEq)]
-enum Preset {
-    Jev,
-    Clef,
-    Gemini,
-    Custom,
-}
-
-impl SystemOne {
-    pub fn preset(name: &str) -> Option<Self> {
-        let preset = match name {
-            "jev" => Preset::Jev,
-            "clef" => Preset::Clef,
-            "gemini" => Preset::Gemini,
-            "systemone" => Preset::Custom,
-            _ => return None,
-        };
-        Some(Self { preset })
-    }
-
-    fn url(&self, model: &str, cfg: &Config) -> Result<String, Error> {
-        let missing = |what| Error::new(ErrorCode::InvalidRequest, format!("{what} is required"));
-        let base = |default: &str| {
-            cfg.base_url
-                .as_deref()
-                .unwrap_or(default)
-                .trim_end_matches('/')
-                .to_owned()
-        };
-        Ok(match self.preset {
-            Preset::Jev => base("https://api.typesafe.ai") + "/v1/systemone",
-            Preset::Gemini => {
-                base("https://generativelanguage.googleapis.com") + "/v1beta/decisions"
+/// Puts input and media where the dialect expects them.
+fn attach_input<'a>(
+    d: &Dialect,
+    req: &'a DecisionRequest,
+    body: &mut Body<'a>,
+) -> Result<(), Error> {
+    // Media types and counts were checked against the capabilities already.
+    let media = &req.media;
+    let text = || match &req.input {
+        Value::String(_) => req.input.clone(),
+        other => Value::String(other.to_string()),
+    };
+    let mut value: Cow<'a, Value> = match d.input_field {
+        InputField::State => Cow::Borrowed(&req.input),
+        InputField::Input => Cow::Owned(text()),
+    };
+    match d.media_encoding {
+        MediaEncoding::None | MediaEncoding::ContentParts => {}
+        MediaEncoding::TypedBlocks => {
+            if !media.is_empty() {
+                value = Cow::Owned(gemini::blocks(value.into_owned(), media)?);
             }
-            Preset::Custom => {
-                if cfg.base_url.is_none() {
-                    return Err(missing("base_url"));
-                }
-                base("") + "/v1/systemone"
-            }
-            Preset::Clef => {
-                let id = cfg
-                    .account_id
-                    .as_deref()
-                    .ok_or_else(|| missing("account_id"))?;
-                let root = base("https://api.cloudflare.com");
-                format!("{root}/client/v4/accounts/{id}/ai/run/@cf/cloudflare/{model}")
-            }
-        })
-    }
-
-    /// Documented per-request caps.
-    fn limits(&self) -> Limits {
-        const NONE: usize = usize::MAX;
-        match self.preset {
-            Preset::Jev => Limits {
-                questions: NONE,
-                options: NONE,
-                levels: 10,
-            },
-            Preset::Clef => Limits {
-                questions: 64,
-                options: NONE,
-                levels: 10,
-            },
-            Preset::Gemini => Limits {
-                questions: 1000,
-                options: 255,
-                levels: 255,
-            },
-            Preset::Custom => Limits {
-                questions: NONE,
-                options: NONE,
-                levels: NONE,
-            },
         }
+        MediaEncoding::DataUrlList => body.images = media.iter().map(Media::data_url).collect(),
+        MediaEncoding::JevAssets if !media.is_empty() => {
+            // Placeholders in the input are swapped for the assets server-side.
+            let mut refs = vec![];
+            for (n, img) in media.iter().enumerate() {
+                let format = img
+                    .mime_type
+                    .strip_prefix("image/")
+                    .unwrap_or(&img.mime_type);
+                let key = format!("letsdecide-image-{n}");
+                let asset = json!({ "type": "image", "format": format, "data_base64": img.data });
+                body.assets.insert(key.clone(), asset);
+                refs.push(key);
+            }
+            value = Cow::Owned(match value.into_owned() {
+                Value::String(t) => Value::String(format!("{t}\n{}", refs.join("\n"))),
+                other => Value::Array(
+                    std::iter::once(other)
+                        .chain(refs.into_iter().map(Value::String))
+                        .collect(),
+                ),
+            });
+        }
+        MediaEncoding::JevAssets => {}
     }
-
-    /// Puts input and media where this preset expects them.
-    fn attach_input<'a>(
-        &self,
-        req: &'a DecisionRequest,
-        body: &mut Body<'a>,
-        header: &mut Option<(String, String)>,
-    ) -> Result<(), Error> {
-        let unsupported = |m: &str| Err(Error::new(ErrorCode::Unsupported, m));
-        let media = &req.media;
-        if self.preset == Preset::Gemini
-            && media
-                .iter()
-                .any(|m| m.is_image() && !GEMINI_IMAGE_MIME.contains(&m.mime_type.as_str()))
-        {
-            return unsupported("Gemini does not accept this image MIME type");
-        }
-        body.state = Some(Cow::Borrowed(&req.input));
-        if self.preset != Preset::Gemini {
-            req.require_images_only()?;
-        }
-        match self.preset {
-            // Typed blocks; text-only input stays a plain string. JSON goes as text.
-            Preset::Gemini => {
-                body.state = None;
-                let text = match &req.input {
-                    Value::String(_) => req.input.clone(),
-                    other => Value::String(other.to_string()),
-                };
-                body.input = Some(if media.is_empty() {
-                    text
-                } else {
-                    let mut blocks = vec![json!({ "type": "text", "text": text })];
-                    for m in media {
-                        let Some(kind) = m.kind() else {
-                            return unsupported(&format!("unsupported media `{}`", m.mime_type));
-                        };
-                        blocks.push(
-                            json!({ "type": kind, "data": m.data, "mime_type": m.mime_type }),
-                        );
-                    }
-                    Value::Array(blocks)
-                });
-            }
-            Preset::Clef => {
-                if media.len() > 4 {
-                    return unsupported("Clef takes at most 4 images");
-                }
-                if media.iter().any(|i| {
-                    !matches!(
-                        i.mime_type.as_str(),
-                        "image/png" | "image/jpeg" | "image/webp"
-                    )
-                }) {
-                    return unsupported("Clef images must be PNG, JPEG or WebP");
-                }
-                body.images = media.iter().map(Media::data_url).collect();
-            }
-            Preset::Jev if !media.is_empty() => {
-                // Placeholders in `state` are swapped for the assets server-side.
-                let mut refs = vec![];
-                for (n, img) in media.iter().enumerate() {
-                    let format = match img.mime_type.as_str() {
-                        "image/png" => "png",
-                        "image/jpeg" => "jpeg",
-                        _ => return unsupported("Jev images must be PNG or JPEG"),
-                    };
-                    let key = format!("letsdecide-image-{n}");
-                    let asset =
-                        json!({ "type": "image", "format": format, "data_base64": img.data });
-                    body.assets.insert(key.clone(), asset);
-                    refs.push(key);
-                }
-                body.state = Some(Cow::Owned(match &req.input {
-                    Value::String(t) => Value::String(format!("{t}\n{}", refs.join("\n"))),
-                    other => Value::Array(
-                        std::iter::once(other.clone())
-                            .chain(refs.into_iter().map(Value::String))
-                            .collect(),
-                    ),
-                }));
-                // Jev gates image requests behind this header.
-                *header = Some(("typesafe-danger-zone-images".into(), "true".into()));
-            }
-            Preset::Custom if !media.is_empty() => {
-                return unsupported("images are not supported for custom servers")
-            }
-            _ => {}
-        }
-        Ok(())
+    match d.input_field {
+        InputField::State => body.state = Some(value),
+        InputField::Input => body.input = Some(value),
     }
+    Ok(())
 }
-
-struct Limits {
-    questions: usize,
-    options: usize,
-    levels: usize,
-}
-
-/// Image MIME types Gemini Decisions accepts (decisions-api, "Input").
-const GEMINI_IMAGE_MIME: [&str; 8] = [
-    "image/png",
-    "image/jpeg",
-    "image/webp",
-    "image/heic",
-    "image/heif",
-    "image/gif",
-    "image/bmp",
-    "image/tiff",
-];
-
-/// `error.code` values that mean the input was blocked (decisions-api, "Request").
-const GEMINI_BLOCK_CODES: [&str; 5] = [
-    "safety",
-    "prohibited_content",
-    "blocklist",
-    "image_safety",
-    "content_blocked",
-];
 
 // Request wire types, borrowed so the body is serialised straight to one buffer.
 #[derive(Serialize)]
@@ -229,7 +89,7 @@ struct Body<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     state: Option<Cow<'a, Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    input: Option<Value>,
+    input: Option<Cow<'a, Value>>,
     // Clef: data URLs.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     images: Vec<String>,
@@ -240,10 +100,20 @@ struct Body<'a> {
 }
 
 #[derive(Serialize)]
+struct NoulCriteria<'a> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    true_description: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    false_description: Option<&'a str>,
+}
+
+#[derive(Serialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 enum Wire<'a> {
     Noul {
         instructions: &'a str,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        criteria: Option<NoulCriteria<'a>>,
     },
     Choice {
         instructions: &'a str,
@@ -274,6 +144,7 @@ struct Usage {
 #[derive(Deserialize)]
 struct PromptFeedback {
     block_reason: Option<String>,
+    block_reason_message: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -286,39 +157,35 @@ struct RawAnswer {
     probabilities: BTreeMap<String, f32>,
 }
 
-impl Provider for SystemOne {
-    fn build(
-        &self,
-        model: &str,
-        req: &DecisionRequest,
-        cfg: &Config,
-    ) -> Result<HttpRequest, Error> {
-        req.validate()?;
-        let limits = self.limits();
-        let unsupported = |m: String| Err(Error::new(ErrorCode::Unsupported, m));
-        if req.questions.len() > limits.questions {
-            return unsupported(format!("max {} questions per request", limits.questions));
-        }
-        for (id, q) in &req.questions {
-            match q {
-                Question::Score { levels, .. } if levels.len() > limits.levels => {
-                    return unsupported(format!(
-                        "question `{id}`: max {} score levels",
-                        limits.levels
-                    ));
-                }
-                Question::Choice { options, .. } if options.len() > limits.options => {
-                    return unsupported(format!("question `{id}`: max {} options", limits.options));
-                }
-                _ => {}
-            }
-        }
-        let questions = req
-            .questions
+pub(crate) fn build(
+    d: &Dialect,
+    model: &str,
+    req: &DecisionRequest,
+    cfg: &Config,
+) -> Result<HttpRequest, Error> {
+    d.capabilities.check(req)?;
+    req.require_portable(
+        d.media_encoding == MediaEncoding::TypedBlocks,
+        false,
+        d.capabilities.yesno_descriptions,
+    )?;
+    let questions =
+        req.questions
             .iter()
             .map(|(id, q)| {
                 let wire = match q {
-                    Question::YesNo { instructions } => Wire::Noul { instructions },
+                    Question::YesNo {
+                        instructions,
+                        yes_description,
+                        no_description,
+                    } => Wire::Noul {
+                        instructions,
+                        criteria: (yes_description.is_some() || no_description.is_some())
+                            .then_some(NoulCriteria {
+                                true_description: yes_description.as_deref(),
+                                false_description: no_description.as_deref(),
+                            }),
+                    },
                     Question::Choice {
                         instructions,
                         options,
@@ -337,83 +204,111 @@ impl Provider for SystemOne {
                 (id.as_str(), wire)
             })
             .collect();
-        let mut body = Body {
-            model,
-            state: None,
-            input: None,
-            images: vec![],
-            assets: BTreeMap::new(),
-            questions,
-        };
-        let mut extra_header = None;
-        self.attach_input(req, &mut body, &mut extra_header)?;
-        let body = serde_json::to_vec(&body)
-            .map_err(|e| Error::new(ErrorCode::InvalidRequest, e.to_string()))?;
-        let url = self.url(model, cfg)?;
-        let mut http = match self.preset {
-            Preset::Gemini => post(url, "x-goog-api-key", false, cfg, body),
-            _ => post(url, "authorization", true, cfg, body),
-        };
-        http.headers.extend(extra_header);
-        Ok(http)
+    let mut body = Body {
+        model,
+        state: None,
+        input: None,
+        images: vec![],
+        assets: BTreeMap::new(),
+        questions,
+    };
+    attach_input(d, req, &mut body)?;
+    let body = encode(&body, req)?;
+    let url = d.url(model, cfg)?;
+    let mut headers = vec![("content-type".to_owned(), "application/json".to_owned())];
+    headers.extend(d.credential(cfg)?);
+    if !req.media.is_empty() && d.media_encoding == MediaEncoding::JevAssets {
+        headers.push((JEV_IMAGE_HEADER.0.into(), JEV_IMAGE_HEADER.1.into()));
+    }
+    let mut http = HttpRequest {
+        method: "POST",
+        url,
+        headers,
+        body,
+    };
+    apply_headers(&mut http, cfg)?;
+    Ok(http)
+}
+
+pub(crate) fn parse(
+    d: &Dialect,
+    req: &DecisionRequest,
+    res: &HttpResponse,
+) -> Result<DecisionResponse, Error> {
+    if let Some(reason) = d.blocked(res) {
+        return Ok(refused(req, None, None, Some(reason)));
+    }
+    if !(200..300).contains(&res.status) {
+        return Err(http_error(res));
+    }
+    let bad = |m: String| Error {
+        status: Some(res.status),
+        ..Error::new(ErrorCode::BadResponse, m)
+    };
+    let v: Value = serde_json::from_slice(&res.body)
+        .map_err(|e| bad(safe_serde_message("response body", &e)))?;
+    let mut reply: Reply = serde_json::from_value(d.unwrap_envelope(v))
+        .map_err(|e| bad(safe_serde_message("response body", &e)))?;
+    let input_tokens = reply.usage.take().and_then(|u| u.input_tokens);
+
+    // Input blocked by a safety filter: nothing was evaluated.
+    if let Some(f) = reply.prompt_feedback.take() {
+        if let Some(reason) = f.block_reason {
+            let reason = f.block_reason_message.unwrap_or(reason);
+            return Ok(refused(req, reply.model, input_tokens, Some(reason)));
+        }
     }
 
-    fn parse(&self, req: &DecisionRequest, res: &HttpResponse) -> Result<DecisionResponse, Error> {
-        if self.preset == Preset::Gemini && res.status == 400 && blocked_by_error(&res.body) {
-            return Ok(refused(req, None, None));
-        }
-        if !(200..300).contains(&res.status) {
-            return Err(http_error(res));
-        }
-        let bad = |m: String| Error {
-            status: Some(res.status),
-            ..Error::new(ErrorCode::BadResponse, m)
-        };
-        let mut reply: Reply = serde_json::from_slice(&res.body).map_err(|e| bad(e.to_string()))?;
-        let input_tokens = reply.usage.and_then(|u| u.input_tokens);
-
-        // Input blocked by a safety filter: nothing was evaluated.
-        if reply.prompt_feedback.and_then(|f| f.block_reason).is_some() {
-            return Ok(refused(req, reply.model, input_tokens));
-        }
-
-        let mut answers = BTreeMap::new();
-        for (id, q) in &req.questions {
-            let raw = reply
-                .answers
-                .remove(id)
-                .ok_or_else(|| bad(format!("missing answer `{id}`")))?;
-            let missing = |f: &str| bad(format!("answer `{id}` missing `{f}`"));
-            let answer = match q {
-                Question::YesNo { .. } => Answer::YesNo {
-                    probability: raw.noul.ok_or_else(|| missing("noul"))?,
-                },
-                Question::Choice { .. } => Answer::Choice {
-                    choice: raw.choice.ok_or_else(|| missing("choice"))?,
-                    confidence: raw.confidence,
+    let mut answers = BTreeMap::new();
+    for (id, q) in &req.questions {
+        let raw = reply
+            .answers
+            .remove(id)
+            .ok_or_else(|| bad(format!("missing answer `{id}`")))?;
+        let missing = |f: &str| bad(format!("answer `{id}` missing `{f}`"));
+        let answer = match q {
+            Question::YesNo { .. } => Answer::YesNo {
+                probability: raw.noul.ok_or_else(|| missing("noul"))?,
+            },
+            Question::Choice { .. } => {
+                let choice = raw.choice.ok_or_else(|| missing("choice"))?;
+                let (confidence, confidence_source) =
+                    confidence(raw.confidence, raw.probabilities.get(&choice).copied());
+                Answer::Choice {
+                    choice,
+                    confidence,
+                    confidence_source,
                     probabilities: raw.probabilities,
-                },
-                Question::Score { levels, .. } => Answer::Score {
+                }
+            }
+            Question::Score { levels, .. } => {
+                // Providers key probabilities by 0-based level index.
+                let probabilities: BTreeMap<Id, f32> = levels
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, l)| {
+                        Some((l.id.clone(), *raw.probabilities.get(&i.to_string())?))
+                    })
+                    .collect();
+                let top = probabilities.values().copied().reduce(f32::max);
+                let (confidence, confidence_source) = confidence(raw.confidence, top);
+                Answer::Score {
                     value: raw.score.ok_or_else(|| missing("score"))?,
-                    confidence: raw.confidence,
-                    // Providers key probabilities by 0-based level index.
-                    probabilities: levels
-                        .iter()
-                        .enumerate()
-                        .filter_map(|(i, l)| {
-                            Some((l.id.clone(), *raw.probabilities.get(&i.to_string())?))
-                        })
-                        .collect(),
-                },
-            };
-            answers.insert(id.clone(), answer);
-        }
-        Ok(DecisionResponse {
-            model: reply.model,
-            answers,
-            input_tokens,
-        })
+                    confidence,
+                    confidence_source,
+                    probabilities,
+                }
+            }
+        };
+        answers.insert(id.clone(), answer);
     }
+    Ok(DecisionResponse {
+        model: reply.model,
+        answers,
+        input_tokens,
+        probability_source: ProbabilitySource::Provider,
+        block_reason: None,
+    })
 }
 
 /// Every question refused: the input was blocked, nothing was evaluated.
@@ -421,6 +316,7 @@ fn refused(
     req: &DecisionRequest,
     model: Option<String>,
     input_tokens: Option<u32>,
+    block_reason: Option<String>,
 ) -> DecisionResponse {
     DecisionResponse {
         model,
@@ -430,17 +326,7 @@ fn refused(
             .map(|id| (id.clone(), Answer::Refused))
             .collect(),
         input_tokens,
+        probability_source: ProbabilitySource::Provider,
+        block_reason,
     }
-}
-
-/// Gemini's documented HTTP 400 safety shape: `{"error": {"code": "safety", ..}}`.
-fn blocked_by_error(body: &[u8]) -> bool {
-    serde_json::from_slice::<Value>(body)
-        .ok()
-        .and_then(|v| {
-            v["error"]["code"]
-                .as_str()
-                .map(|c| GEMINI_BLOCK_CODES.contains(&c))
-        })
-        .unwrap_or(false)
 }
