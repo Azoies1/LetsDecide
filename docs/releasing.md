@@ -4,68 +4,80 @@ One tag publishes all three packages under the same version:
 
 | Registry | Package | Credential |
 |---|---|---|
-| [crates.io](https://crates.io) | `letsdecide` (Rust core) | API token, repository secret `CARGO_REGISTRY_TOKEN` |
-| [npm](https://www.npmjs.com) | `letsdecide` (`bindings/js`, WASM) | Granular access token, repository secret `NPM_TOKEN` |
+| [crates.io](https://crates.io) | `letsdecide` (Rust core) | None: trusted publishing |
+| [npm](https://www.npmjs.com) | `letsdecide` (`bindings/js`, WASM) | None: trusted publishing |
 | [PyPI](https://pypi.org) | `letsdecide` (`bindings/python`) | None: trusted publishing, plus repository variable `PUBLISH_PYPI=true` |
+
+No registry token is stored in GitHub or anywhere else. Each publish job proves
+its identity to the registry (this repository, the workflow file `release.yml`)
+with a short-lived OIDC token and gets a short-lived publish credential back. The
+registry only does that if you told it to trust this workflow, once per package
+(see *One-time setup*).
 
 Registry screens change. If one differs from the steps below, follow the
 registry's own guide (linked in each section).
 
-Publishing is opt-in per registry. A registry without its credential is
-skipped, so a tag on an unconfigured repository only builds and verifies.
 Nothing is published unless every package builds first, and every built wheel
-is installed and tested on Linux, macOS and Windows before anything ships.
-
-The credentials must be **GitHub Actions secrets**. A token kept anywhere else
-(a cloud environment's variables, a password manager, your shell) is invisible
-to the workflow, which then skips that registry. A skipped registry still leaves
-the run green, so read the run: each one raises a warning annotation and a line
-in the run summary.
+is installed and tested on Linux, macOS and Windows before anything ships. A
+registry that doesn't trust the workflow fails its publish job, so a red job
+means that registry did not ship. PyPI is the exception: its job is skipped,
+without a warning, unless the repository variable `PUBLISH_PYPI` is `true`.
 
 ## One-time setup
 
-GitHub secrets and variables live in the repository under **Settings →
-Secrets and variables → Actions** (secrets on the *Secrets* tab, variables on
-the *Variables* tab). Anything you paste into a secret is never shown again.
+### A new package needs a first release by hand
 
-### crates.io: API token
+crates.io and npm only let you add a trusted publisher to a package that
+already exists, so the first version of a new package is published another way,
+and trust is configured afterwards. (`letsdecide` 0.3.0 on npm was published
+this way, so it has no provenance attestation. Releases from the workflow do.)
 
-1. Sign in at <https://crates.io> with GitHub and verify your email address
-   (account settings). Publishing requires a verified email.
-2. Create a token at <https://crates.io/settings/tokens>. Give it the
-   `publish-new` scope (the first release creates the crate) and
-   `publish-update`. Set an expiry. Copy the token; it is shown once.
-3. Add it as the repository secret `CARGO_REGISTRY_TOKEN`.
+- **crates.io:** `cargo publish` locally with a short-lived API token that has
+  the `publish-new` scope (<https://crates.io/settings/tokens>). Revoke the token afterwards.
+- **npm:** publish with your own 2FA login, `npm publish` or `npm stage publish`
+  (a person approves a staged publish with 2FA). Don't use a token that bypasses 2FA.
+- **PyPI:** nothing by hand. A *pending publisher* (below) creates the project on
+  the first release.
 
-crates.io also supports trusted publishing (no stored token), but only after the
-crate exists, so the first release needs the token. Guide:
-<https://crates.io/docs/trusted-publishing>.
+### crates.io: trusted publisher
 
-### npm: granular access token
+1. Sign in at <https://crates.io> with GitHub and open the crate's
+   **Settings → Trusted Publishing**.
+2. Add a GitHub publisher:
 
-1. Create an account at <https://www.npmjs.com> and enable two-factor
-   authentication.
-2. Profile menu → **Access Tokens** → **Generate New Token** → **Granular
-   Access Token**. Permission: **Read and write** on packages. Choose all
-   packages, because the package doesn't exist yet and can't be selected.
-   Enable the option to bypass two-factor authentication, which CI needs.
-3. Add it as the repository secret `NPM_TOKEN`.
+   | Field | Value |
+   |---|---|
+   | Repository owner | `Azoies1` |
+   | Repository name | `LetsDecide` |
+   | Workflow filename | `release.yml` |
+   | Environment | leave empty (the job has none) |
 
-Classic npm tokens no longer exist. Granular tokens that can publish expire:
-the default is 7 days and the maximum is 90. If a release fails with `401` or
-`403`, the token has probably expired: create a new one and update the secret.
+The `publish-crates` job calls `rust-lang/crates-io-auth-action`, which trades
+the job's OIDC token for a short-lived crates.io token that exists only for the
+`cargo publish` step. Guide: <https://crates.io/docs/trusted-publishing>.
 
-A token that bypasses 2FA is on its way out for publishing. GitHub's
-[announcement](https://github.blog/changelog/2026-07-08-npm-install-time-security-and-gat-bypass2fa-deprecation/)
-says such tokens will lose the ability to publish directly around January 2027,
-keeping only reading private packages and staging a publish that a person
-approves with 2FA. They can already no longer create tokens or change trusted
-publishing configuration, so do those interactively with 2FA. Use the token for
-the first release, delete it, then move npm to trusted publishing
-(<https://docs.npmjs.com/trusted-publishers>) or staged publishing
-(<https://docs.npmjs.com/staged-publishing>).
+### npm: trusted publisher
 
-### PyPI: trusted publisher (no token)
+Needs npm 11.15.0 or newer, write access to the package and an account with
+two-factor authentication. The command asks for a 2FA login. A token that
+bypasses 2FA can't configure trust.
+
+```sh
+npm install -g npm@^11.15.0
+npm trust github letsdecide --file release.yml --repo Azoies1/LetsDecide --allow-publish
+npm trust list letsdecide        # check it
+```
+
+A package has one trust configuration at a time. To replace it:
+`npm trust revoke --id <id> letsdecide`, then create the new one.
+
+A new configuration **expires if no publish through it succeeds within 48
+hours** ([announcement](https://github.blog/changelog/2026-10-02-unvalidated-npm-trusted-publishing-configurations-now-expire)).
+If it lapses, create it again. The `publish-npm` job installs npm 11.5.1 or newer
+(trusted publishing needs it) and publishes with provenance. Guide:
+<https://docs.npmjs.com/trusted-publishers>.
+
+### PyPI: trusted publisher
 
 1. Create an account at <https://pypi.org> and enable two-factor authentication.
 2. Open <https://pypi.org/manage/account/publishing/> and add a **pending
@@ -80,7 +92,10 @@ the first release, delete it, then move npm to trusted publishing
    | Environment name | `pypi` |
 
    Use the owner and repository exactly as GitHub shows them.
-3. Add the repository variable `PUBLISH_PYPI` with the value `true`.
+3. Add the **repository** variable `PUBLISH_PYPI` with the value `true`
+   (repository **Settings → Secrets and variables → Actions → Variables**, the
+   repository tab, not an environment's: the job's `if:` can't see environment
+   variables).
 
 A pending publisher does not reserve the name. If someone else registers
 `letsdecide` first, the publisher is invalidated, so release soon after
@@ -98,9 +113,9 @@ creating it. Guide: <https://docs.pypi.org/trusted-publishers/creating-a-project
    `git tag v<version> && git push origin v<version>`.
 4. Watch the **Release** run under the repository's *Actions* tab. The tag must
    match all seven versions, or the run stops before building.
-5. Open the run summary and check for "NOT published" warnings, then check each
-   registry: `cargo add letsdecide`, `npm view letsdecide`,
-   `pip download letsdecide --no-deps`.
+5. Check each registry: `cargo add letsdecide`, `npm view letsdecide`,
+   `pip download letsdecide --no-deps`. A new npm version can take a few minutes
+   before its tarball downloads.
 
 A published version number can never be reused, even if the release is removed.
 To warn users off a bad release, *yank* it (crates.io, PyPI) or *deprecate* it
@@ -111,8 +126,9 @@ To warn users off a bad release, *yank* it (crates.io, PyPI) or *deprecate* it
 | Symptom | Cause |
 |---|---|
 | `verify` fails, `... is 0.2.0, tag is 0.3.0` | A manifest wasn't bumped. The error names the file. |
-| npm `401` / `403`, or an error asking for a staged publish | Token expired (90 days at most), missing the 2FA-bypass option, or the January 2027 change has taken effect. Publish by hand with your 2FA login, or use staged publishing. |
+| `publish-crates` fails at `crates-io-auth-action` | The crate has no trusted publisher matching this repository, workflow file and environment, or the job lost `id-token: write`. |
+| `publish-npm` fails with `E403`, `E404` or `ENEEDAUTH` | npm doesn't trust this run: check `npm trust list letsdecide` (repository `Azoies1/LetsDecide`, file `release.yml`, no environment), that the configuration hasn't expired (48 hours without a publish), and that the job has npm 11.5.1 or newer. |
 | npm provenance error about `repository.url` | `repository.url` in `bindings/js/package.json` must match the GitHub repository. |
 | PyPI `invalid-publisher` | The pending publisher's owner, repository, workflow or environment doesn't match the run. Compare each field. |
-| Run is green but a registry has no new version | Its credential isn't a GitHub Actions secret (or is misnamed). Look for the warning annotation and the run summary. |
+| Run is green but PyPI has no new version | The repository variable `PUBLISH_PYPI` isn't `true`, or it was set on an environment instead of the repository. The job is skipped without a warning. |
 | A registry says the version already exists | It was published on an earlier run. Use *Re-run failed jobs*, not *Re-run all jobs*. |
