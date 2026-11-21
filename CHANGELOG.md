@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-21
+
 ### Added
 - Audio, video and PDF input for Gemini (`media`, replacing `images`).
 - Python binding (PyO3, sync and async clients).
@@ -34,6 +36,7 @@ All notable changes to this project are documented here. The format follows
 - Image input.
 - Golden fixtures for every provider.
 
-[Unreleased]: https://github.com/azoies1/letsdecide/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/azoies1/letsdecide/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/azoies1/letsdecide/releases/tag/v0.3.0
 [0.2.0]: https://github.com/azoies1/letsdecide/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/azoies1/letsdecide/releases/tag/v0.1.0

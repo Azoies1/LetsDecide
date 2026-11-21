@@ -6,7 +6,7 @@ name: Release
 #
 # Publishing is opt-in per registry. Without credentials a tag only verifies:
 #   crates.io  repository secret    CARGO_REGISTRY_TOKEN
-#   npm        repository secret    NPM_TOKEN (an automation token)
+#   npm        repository secret    NPM_TOKEN (granular token, read and write, bypass 2FA)
 #   PyPI       repository variable  PUBLISH_PYPI=true, plus a trusted publisher
 #              on pypi.org for this repo, workflow release.yml, environment pypi
 #              (no secret needed)

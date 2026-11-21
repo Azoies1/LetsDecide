@@ -47,9 +47,16 @@ crate exists, so the first release needs the token. Guide:
 Classic npm tokens no longer exist. Granular tokens that can publish expire:
 the default is 7 days and the maximum is 90. If a release fails with `401` or
 `403`, the token has probably expired: create a new one and update the secret.
-npm recommends trusted publishing instead (npm 11.5.1+ and Node 22.14+; set up
-on the package's settings page once the package exists). Guide:
-<https://docs.npmjs.com/trusted-publishers>.
+
+A token that bypasses 2FA is on its way out for publishing. GitHub's
+[announcement](https://github.blog/changelog/2026-07-08-npm-install-time-security-and-gat-bypass2fa-deprecation/)
+says such tokens will lose the ability to publish directly around January 2027,
+keeping only reading private packages and staging a publish that a person
+approves with 2FA. They can already no longer create tokens or change trusted
+publishing configuration, so do those interactively with 2FA. Use the token for
+the first release, delete it, then move npm to trusted publishing
+(<https://docs.npmjs.com/trusted-publishers>) or staged publishing
+(<https://docs.npmjs.com/staged-publishing>).
 
 ### PyPI: trusted publisher (no token)
 
@@ -95,7 +102,7 @@ To warn users off a bad release, *yank* it (crates.io, PyPI) or *deprecate* it
 | Symptom | Cause |
 |---|---|
 | `verify` fails, `... is 0.2.0, tag is 0.3.0` | A manifest wasn't bumped. The error names the file. |
-| npm `401` / `403` | Token expired (90 days at most) or missing the 2FA-bypass option. |
+| npm `401` / `403`, or an error asking for a staged publish | Token expired (90 days at most), missing the 2FA-bypass option, or the January 2027 change has taken effect. Publish by hand with your 2FA login, or use staged publishing. |
 | npm provenance error about `repository.url` | `repository.url` in `bindings/js/package.json` must match the GitHub repository. |
 | PyPI `invalid-publisher` | The pending publisher's owner, repository, workflow or environment doesn't match the run. Compare each field. |
 | A registry says the version already exists | It was published on an earlier run. Use *Re-run failed jobs*, not *Re-run all jobs*. |

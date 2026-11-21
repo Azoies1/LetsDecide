@@ -12,7 +12,7 @@ question types (yes/no, choice, score) but disagree on wire format.
 - **Tiny.** Two dependencies (`serde`, `serde_json`). No async runtime.
 - **Honest.** Provider limits surface as errors, not silent degradation.
 
-> **Status: early (v0.2).** Adapters for Jev, Clef, Gemini, OpenAI and any
+> **Status: early (v0.3).** Adapters for Jev, Clef, Gemini, OpenAI and any
 > System One compatible server. Wire formats come from public docs; see
 > [Verification status](#verification-status). Image input works with every
 > provider except System One; audio, video and PDF with Gemini. See the

@@ -1,6 +1,6 @@
 {
   "name": "letsdecide",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "One request shape for every decision API (Jev, Clef, OpenAI, Gemini). WebAssembly core.",
   "license": "Apache-2.0",
   "keywords": ["llm", "openai", "gemini", "adapter", "decision", "wasm"],
