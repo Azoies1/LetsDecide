@@ -84,4 +84,87 @@ class ClientTest {
         assertTrue(jev.headers.none { it == ("x-t" to "shared") })
         assertTrue(sent.all { h -> h.headers.contains("x-trace" to "t") })
     }
+
+    private val jevBody = """{"answers": {"billing": {"noul": 0.9},
+        "team": {"choice": "billing", "confidence": 0.8, "probabilities": {"billing": 0.8, "tech": 0.2}}}}"""
+
+    @Test
+    fun dialectsRouteByPrefixWithOptions() {
+        val sent = mutableListOf<Http>()
+        val acme = JSONObject("""{"extends": "systemone", "base_url": "https://api.acme.ai",
+            "path": "/v1/{options.region}/decide", "auth": {"header": "api-key", "required": true}}""")
+        val c = Client(
+            byProvider = mapOf("acme" to ProviderSettings(apiKey = "k", options = mapOf("region" to "eu"))),
+            dialects = mapOf("acme" to acme),
+            transport = replying(200, jevBody, sent = sent),
+        )
+        val out = c.decide("acme/acme-1", request)
+        assertEquals("https://api.acme.ai/v1/eu/decide", sent[0].url)
+        assertTrue(sent[0].headers.contains("api-key" to "k"))
+        assertEquals("acme-1", JSONObject(sent[0].body).getString("model"))
+        assertEquals("billing", out.getJSONObject("answers").getJSONObject("team").getString("choice"))
+        assertTrue(c.capabilities("acme/acme-1").has("media"))
+    }
+
+    @Test
+    fun dialectErrorsNameTheProvider() {
+        val acme = JSONObject("""{"extends": "systemone", "base_url": "https://api.acme.ai", "auth": {"required": true}}""")
+        val c = Client(dialects = mapOf("acme" to acme), transport = { error("must not send") })
+        val e = assertFailsWith<LetsDecideException> { c.decide("acme/acme-1", request) }
+        assertEquals("acme", e.details?.provider)
+        assertEquals("missing_config", e.details?.reason)
+    }
+
+    @Test
+    fun badDialectsFailWhenRegistered() {
+        val typo = JSONObject("""{"extends": "jev", "pathh": "/x"}""")
+        val e = assertFailsWith<LetsDecideException> { Client(dialects = mapOf("acme" to typo)) }
+        assertEquals("InvalidRequest", e.code)
+        assertEquals("acme", e.details?.provider)
+        assertTrue(e.message!!.contains("pathh"))
+    }
+
+    @Test
+    fun builtinNamesNeedReplace() {
+        val patch = JSONObject("""{"extends": "gemini", "path": "/v1/decisions"}""")
+        val e = assertFailsWith<LetsDecideException> { Client(dialects = mapOf("gemini" to patch)) }
+        assertEquals(ErrorDetails("name_taken", provider = "gemini"), e.details)
+
+        val sent = mutableListOf<Http>()
+        val c = Client(
+            byProvider = mapOf("gemini" to ProviderSettings(apiKey = "k")),
+            dialects = mapOf("gemini" to patch), replace = setOf("gemini"),
+            transport = replying(401, "{}", sent = sent),
+        )
+        assertEquals("Auth", assertFailsWith<LetsDecideException> { c.decide("gemini/gemini-decision-1", request) }.code)
+        assertEquals("https://generativelanguage.googleapis.com/v1/decisions", sent[0].url)
+    }
+
+    @Test
+    fun errorDetailsComeThrough() {
+        val c = Client(transport = { error("must not send") })
+        val audio = JSONObject(request.toString()).put("media", org.json.JSONArray().put(JSONObject().put("mime_type", "audio/mpeg").put("data", "AAAA")))
+        val e = assertFailsWith<LetsDecideException> { c.decide("jev/jev-latest", audio) }
+        assertEquals("Unsupported", e.code)
+        assertEquals("media_not_accepted", e.details?.reason)
+        assertEquals("audio/mpeg", e.details?.mimeType)
+        assertEquals("jev", e.details?.provider)
+    }
+
+    @Test
+    fun topLevelHelpers() {
+        assertTrue("gemini" in BUILTIN)
+        assertEquals("systemone", dialect("jev").getString("family"))
+        assertEquals("https://api.typesafe.ai", resolveDialect(JSONObject("""{"extends": "jev"}""")).getString("base_url"))
+        validate(request)
+        assertTrue(capabilities("jev/jev-latest").length() > 0)
+        val e = classifyHttp(HttpReply(429, listOf("Retry-After" to "3"), "{}"))
+        assertEquals("RateLimited", e.code)
+        assertEquals(3000L, e.retryAfterMs)
+        val checked = check(request, JSONObject(
+            """{"model": "m", "answers": {"billing": {"kind": "yesno", "probability": 0.7},
+               "team": {"kind": "choice", "choice": "tech", "confidence": 0.6, "probabilities": {"billing": 0.4, "tech": 0.6}}}}""",
+        ))
+        assertEquals("tech", checked.getJSONObject("answers").getJSONObject("team").getString("choice"))
+    }
 }

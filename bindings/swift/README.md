@@ -22,7 +22,26 @@ do {
 }
 ```
 
-Pass your own `Transport` for proxies, pinning or tests.
+Pass your own `Transport` for proxies, pinning or tests. Errors carry
+`details` (`ErrorDetails`: `reason`, `provider`, `question`, `id`, `limit`,
+`actual`, `mimeType`, `field`), safe to log: never keys or content.
+
+### Dialects
+
+Providers described as data ([docs/dialects.md](../../docs/dialects.md)). The
+client initialiser that takes `dialects:` validates them and throws on a bad one.
+
+```swift
+let client = try Client(
+    byProvider: ["acme": ProviderSettings(apiKey: "...", options: ["region": "eu"])],
+    dialects: ["acme": ["extends": "jev", "base_url": "https://api.acme.ai",
+                        "path": "/v1/{options.region}/decisions"]])
+    // replace: ["gemini"] to override a built-in
+_ = try await client.decide("acme/acme-decide-1", request)
+```
+
+Free functions: `dialect(_:)`, `resolveDialect(_:)`, `capabilities(_:)`,
+`validate(_:capabilities:)`, `check(_:_:)`, `classifyHttp(_:)`, `BUILTIN`.
 
 ## Build and test (macOS)
 

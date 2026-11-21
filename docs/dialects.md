@@ -33,6 +33,19 @@ client = Client(
 )
 ```
 
+```kotlin
+Client(
+    byProvider = mapOf("acme" to ProviderSettings(apiKey = System.getenv("ACME_KEY"))),
+    dialects = mapOf("acme" to JSONObject("""{"extends": "jev", "base_url": "https://api.acme.ai", "path": "/v1/decisions"}""")),
+)
+```
+
+```swift
+try Client(
+    byProvider: ["acme": ProviderSettings(apiKey: key)],
+    dialects: ["acme": ["extends": "jev", "base_url": "https://api.acme.ai", "path": "/v1/decisions"]])
+```
+
 ```rust
 let acme = Dialect::from_json(r#"{ "extends": "jev", "base_url": "https://api.acme.ai", "path": "/v1/decisions" }"#)?;
 let mut providers = Registry::builtin();
@@ -62,7 +75,8 @@ await dialect("gemini");   // the built-in as JSON
 await resolveDialect({ extends: "openai", base_url: "https://..." }); // full result, validated
 ```
 
-Python: `dialect("gemini")`, `resolve_dialect({...})`. Rust:
+Python: `dialect("gemini")`, `resolve_dialect({...})`. Kotlin and Swift:
+`dialect("gemini")`, `resolveDialect(...)`. Rust:
 `Dialect::builtin_json("gemini")`, `Dialect::from_json(...)`. The sources are
 `spec/dialects/*.json`.
 

@@ -18,8 +18,9 @@ Format: copy [0000-template.md](0000-template.md).
 | [0008](0008-provider-registry-free-names.md) | Provider registry; free names, a clash is an error | Accepted |
 | [0009](0009-capabilities-and-response-check.md) | Capabilities as data; every response checked | Accepted |
 | [0010](0010-safe-error-details.md) | Structured error details that are safe to log | Accepted |
-| [0011](0011-local-models-label-scoring.md) | Local models read label probabilities; no text parsing | Accepted |
+| [0011](0011-local-models-label-scoring.md) | Local models read label probabilities; no text parsing | Superseded by 0016 |
 | [0012](0012-no-default-local-model.md) | No default local model | Accepted |
-| [0013](0013-engine-packaging.md) | Model runtimes ship in separate packages | Accepted |
+| [0013](0013-engine-packaging.md) | Model runtimes ship in separate packages | Superseded by 0016 |
 | [0014](0014-credentials-per-provider.md) | Credentials and endpoints are set per provider only | Accepted |
 | [0015](0015-dialects.md) | Dialects: providers as data, with named strategies | Accepted |
+| [0016](0016-thin-access-layer.md) | Thin access layer; no local-model runtime work | Accepted |

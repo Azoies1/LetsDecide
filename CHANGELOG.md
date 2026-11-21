@@ -6,6 +6,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- Scope: the library stays a thin access layer. The planned label scorer,
+  `letsdecide-serve` sidecar, bundled engines, `escalate` middleware and
+  Kotlin/Swift engine slots are dropped (ADR 0016).
+
 ### Added
 - `fanOut` (JS) and `fan_out` (Python middleware): ask several models the same
   request at once and get every raw result back, keyed by model. Supports
@@ -13,6 +18,10 @@ All notable changes to this project are documented here. The format follows
   merged. See `docs/concurrent-models.md`.
 - Custom engines' extra response fields are now kept after the response check.
 - Kotlin and Swift bindings over UniFFI (`bindings/uniffi`, `bindings/kotlin`, `bindings/swift`).
+- Kotlin and Swift clients: `dialects` and `replace`, per-provider `options`,
+  typed error `details` (`ErrorDetails`), and the helpers `dialect`,
+  `resolveDialect`, `validate`, `check`, `classifyHttp`, `capabilities` and
+  `BUILTIN`, matching JS and Python.
 - Middleware (JS and async Python): `hedge`, `split`, `shadow` + `compare`,
   `calibrate` + `fitIsotonic` + `brierScore`, `observe`. Python also gets
   `retry` and `fallback`.

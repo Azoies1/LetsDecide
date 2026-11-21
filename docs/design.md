@@ -19,15 +19,15 @@ A thin translation layer can hide the differences.
 - Users can add providers we don't ship (another cloud, an in-house service)
   without forking: register them under a name; they get the same validation,
   response checks, errors and middleware as the built-ins.
-- Run on the user's own hardware too: server, PC, phone, browser *(planned,
-  see [plan-custom-and-local-providers.md](plan-custom-and-local-providers.md))*.
 - Honest about differences: unsupported features error out.
 
 ## Non-goals (v1)
 
 - Hosting, billing or a proxy service.
-- Getting decisions by **parsing a model's generated text**. Local models are
-  read through their label probabilities instead (see "Decisions made").
+- **Running models.** No scorer, sidecar or bundled engines
+  ([ADR 0016](adr/0016-thin-access-layer.md)). A local server that speaks a
+  known wire format is reached like any provider.
+- Getting decisions by **parsing a model's generated text**.
 - Making confidence numbers comparable across providers.
 - Picking a model for the user (local or cloud). See future-work.md.
 
@@ -80,8 +80,8 @@ answers fail as `BadResponse` instead of reaching the app.
 |---|---|---|
 | 0. Config | `base_url`, `headers`, `options` | built |
 | 1. Dialect | data describing a System One / OpenAI variant ([dialects.md](dialects.md)) | built; every built-in is one |
-| 2. Codec | `build` + `parse` (+ `capabilities`) in their language | Rust: built (`Registry`). JS/Python: planned |
-| 3. Engine | one async `decide()`; for non-HTTP and local models | planned |
+| 2. Codec | `build` + `parse` (+ `capabilities`) in their language | built: Rust (`Registry`), JS, Python |
+| 3. Engine | one async `decide()`; for non-HTTP providers and mocks | built: JS, Python |
 
 ## Provider mapping
 
@@ -170,20 +170,13 @@ Numbered records live in [adr/](adr/README.md); the list below is the original s
   codecs and engines), so they can't be confused with ours.
 - **`probability_source`** on every response (`provider`, `logprob`, `nli`):
   numbers from different sources are never on one scale.
-- **Local models: label scoring, not text parsing** *(planned)*. A generated
-  "0.8" is text, not a measured probability; free text drifts from the
-  format; sampling isn't repeatable; generation costs more than one forward
-  pass. Runtimes that expose no log-probs return `Unsupported`
-  (`no_logprobs`), not sampled guesses.
-- **No default local model.** Consumers choose. Library-assisted choice is
-  future work.
+- **No default model.** Consumers choose (ADR 0012).
 - **Credentials per provider only** (ADR 0014). Clients have no top-level
   key: each provider's key, token, endpoint and options live in its own
   `byProvider` entry, so routing middleware can't send a key to the wrong
   provider. Client-wide headers are for non-secrets.
-- **Packaging:** anything that pulls in a model runtime is a separate package
-  (Python extras, `@letsdecide/*`, separate SwiftPM/Gradle artifacts); HTTP
-  runtime shims and our own code stay in the main packages.
+- **Thin access layer** (ADR 0016): the library reaches decision APIs; it
+  does not run models.
 - **Licence: Apache-2.0** (patent grant).
 
 ## Planned
@@ -191,8 +184,8 @@ Numbered records live in [adr/](adr/README.md); the list below is the original s
 The backlog, including unverified Gemini behaviour and release steps, is in
 [future-work.md](future-work.md). Built only when a real need appears.
 
-Custom and local providers: phases P2–P6 in
-[plan-custom-and-local-providers.md](plan-custom-and-local-providers.md).
+Custom providers: P1–P3 in
+[plan-custom-and-local-providers.md](plan-custom-and-local-providers.md) (closed; P4–P6 dropped).
 
 ## Open questions
 
