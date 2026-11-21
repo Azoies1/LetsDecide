@@ -26,7 +26,20 @@ let ready;
 let loaded = false;
 /** Loads the WASM once. Pass bytes or a module where `fetch(url)` isn't available (e.g. Node). */
 export function initialize(wasm) {
-  return (ready ??= init({ module_or_path: wasm }).then((m) => ((loaded = true), m)));
+  return (ready ??= init({ module_or_path: wasm }).then(
+    (m) => ((loaded = true), m),
+    (e) => {
+      ready = undefined; // a failed load can be retried
+      if (wasm === undefined && import.meta.url.startsWith("file:")) {
+        throw new Error(
+          "letsdecide: could not load the WASM from a file: URL (Node's fetch can't). " +
+            "Pass the bytes: new Client(config, { wasm }). See the README.",
+          { cause: e },
+        );
+      }
+      throw e;
+    },
+  ));
 }
 
 /** Built-in provider names; custom providers can't take them without `replace`. */

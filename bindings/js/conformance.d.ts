@@ -1,4 +1,4 @@
-import type { Codec, DecisionRequest, DecisionResponse, Engine, Json } from "./index";
+import type { Codec, DecisionRequest, DecisionResponse, Engine, Json } from "./index.js";
 
 export interface Fixture {
   name?: string;
