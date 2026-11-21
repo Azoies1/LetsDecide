@@ -121,3 +121,14 @@ test("errors carry safe details", async () => {
     return true;
   });
 });
+
+test("fetch is called unbound, as runtimes that check `this` (workerd) require", async () => {
+  let self = "unset";
+  const fetch = function (url, init) {
+    self = this;
+    return new Response(JSON.stringify({ answers: { billing: { type: "noul", noul: 0.9 }, team: { type: "choice", choice: "billing", confidence: 0.8, probabilities: { billing: 0.8, tech: 0.2 } } } }), { status: 200 });
+  };
+  const client = new Client({ byProvider: { jev: { apiKey: "k" } } }, { fetch, wasm });
+  await client.decide("jev/jev-latest", request);
+  assert.equal(self, undefined);
+});

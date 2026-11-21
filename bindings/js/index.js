@@ -230,7 +230,10 @@ export class Client {
   }
 
   async #send(http, signal) {
-    const res = await this.fetch(http.url, {
+    // Called unbound: runtimes such as workerd throw "Illegal invocation" when
+    // `globalThis.fetch` runs with another `this`.
+    const send = this.fetch;
+    const res = await send(http.url, {
       method: http.method,
       headers: Object.fromEntries(http.headers),
       body: http.body,
