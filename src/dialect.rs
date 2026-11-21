@@ -166,6 +166,7 @@ fn builtins() -> &'static BTreeMap<&'static str, Value> {
         BUILTIN_SOURCES
             .iter()
             .map(|(n, src)| {
+                #[allow(clippy::expect_used)] // embedded data, loaded by tests
                 let v: Value = serde_json::from_str(src).expect("built-in dialect is JSON");
                 (*n, strip_comments(v))
             })
@@ -215,6 +216,7 @@ impl Dialect {
     /// A built-in dialect: `jev`, `clef`, `gemini`, `openai`, `systemone`.
     pub fn builtin(name: &str) -> Option<Self> {
         let v = builtins().get(name)?.clone();
+        #[allow(clippy::expect_used)] // embedded data, loaded by tests
         Some(serde_json::from_value(v).expect("built-in dialect is valid"))
     }
 
@@ -362,7 +364,9 @@ impl Dialect {
             path = path.replace("{account_id}", path_segment(id, "account_id")?);
         }
         while let Some(i) = path.find("{options.") {
-            let end = i + path[i..].find('}').expect("validated");
+            let end = i + path[i..]
+                .find('}')
+                .ok_or_else(|| invalid("`path` has an unclosed `{`", "path"))?;
             let name = path[i + "{options.".len()..end].to_owned();
             let field = format!("options.{name}");
             let value = match cfg.options.get(&name) {
