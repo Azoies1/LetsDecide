@@ -33,6 +33,9 @@ const result = await client.decide("gemini/gemini-decision-1", {
 result.answers.billing; // { kind: "yesno", probability: 0.97 }
 ```
 
+In Node, pass the WASM bytes (see [Node](#node) below). Browsers and edge
+runtimes load it by themselves.
+
 Change the model string (`"provider/model"`) to change provider. Supported:
 `jev/<model>`, `clef/<model>`, `gemini/<model>`, `openai/<model>` and
 `systemone/<model>` for any System One compatible server.

@@ -441,13 +441,16 @@ fn check_base_url(b: &str) -> Result<(), Error> {
 }
 
 /// Values put into the path must stay one segment: no `/`, `?`, `#`, `%`,
-/// `..`, spaces or control characters.
+/// `\`, `..`, spaces or control characters. Braces are refused too: a value is
+/// never re-read as a placeholder (`{options.a}` as the value of `a` would
+/// otherwise expand forever).
 fn path_segment<'a>(v: &'a str, field: &str) -> Result<&'a str, Error> {
     let bad = v.is_empty()
         || v == "."
         || v == ".."
-        || v.bytes()
-            .any(|b| matches!(b, b'/' | b'?' | b'#' | b'%' | b'\\') || b <= b' ' || b == 0x7f);
+        || v.bytes().any(|b| {
+            matches!(b, b'/' | b'?' | b'#' | b'%' | b'\\' | b'{' | b'}') || b <= b' ' || b == 0x7f
+        });
     if bad {
         Err(invalid(
             format!("`{field}` can't be used in a URL path"),

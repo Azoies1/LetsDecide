@@ -13,7 +13,14 @@ registry's own guide (linked in each section).
 
 Publishing is opt-in per registry. A registry without its credential is
 skipped, so a tag on an unconfigured repository only builds and verifies.
-Nothing is published unless every package builds first.
+Nothing is published unless every package builds first, and every built wheel
+is installed and tested on Linux, macOS and Windows before anything ships.
+
+The credentials must be **GitHub Actions secrets**. A token kept anywhere else
+(a cloud environment's variables, a password manager, your shell) is invisible
+to the workflow, which then skips that registry. A skipped registry still leaves
+the run green, so read the run: each one raises a warning annotation and a line
+in the run summary.
 
 ## One-time setup
 
@@ -91,7 +98,8 @@ creating it. Guide: <https://docs.pypi.org/trusted-publishers/creating-a-project
    `git tag v<version> && git push origin v<version>`.
 4. Watch the **Release** run under the repository's *Actions* tab. The tag must
    match all seven versions, or the run stops before building.
-5. Check each registry: `cargo add letsdecide`, `npm view letsdecide`,
+5. Open the run summary and check for "NOT published" warnings, then check each
+   registry: `cargo add letsdecide`, `npm view letsdecide`,
    `pip download letsdecide --no-deps`.
 
 A published version number can never be reused, even if the release is removed.
@@ -106,4 +114,5 @@ To warn users off a bad release, *yank* it (crates.io, PyPI) or *deprecate* it
 | npm `401` / `403`, or an error asking for a staged publish | Token expired (90 days at most), missing the 2FA-bypass option, or the January 2027 change has taken effect. Publish by hand with your 2FA login, or use staged publishing. |
 | npm provenance error about `repository.url` | `repository.url` in `bindings/js/package.json` must match the GitHub repository. |
 | PyPI `invalid-publisher` | The pending publisher's owner, repository, workflow or environment doesn't match the run. Compare each field. |
+| Run is green but a registry has no new version | Its credential isn't a GitHub Actions secret (or is misnamed). Look for the warning annotation and the run summary. |
 | A registry says the version already exists | It was published on an earlier run. Use *Re-run failed jobs*, not *Re-run all jobs*. |

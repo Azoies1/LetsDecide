@@ -309,7 +309,7 @@ Every raw answer comes back, keyed by model; nothing is merged. Python:
 
 ```python
 import os
-from letsdecide import Client  # not published yet; build from bindings/python
+from letsdecide import Client  # pip install "letsdecide[httpx]"
 
 client = Client(by_provider={"jev": {"api_key": os.environ["JEV_API_KEY"]}})
 res = client.decide("jev/jev-latest", request)

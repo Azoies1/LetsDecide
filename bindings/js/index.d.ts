@@ -150,7 +150,7 @@ export class Client {
   /** Capabilities of any `"provider/model"`, built-in or custom. */
   capabilities(model: string): Promise<Capabilities>;
 }
-export * from "./middleware";
+export * from "./middleware.js";
 
 export type Capabilities = {
   max_questions?: number | null;

@@ -24,6 +24,7 @@
   "scripts": {
     "build": "cargo build -p letsdecide-wasm --target wasm32-unknown-unknown --release && wasm-bindgen --target web --out-dir pkg ../../target/wasm32-unknown-unknown/release/letsdecide_wasm.wasm",
     "test": "node --test test/*.test.js",
+    "test:types": "npx --yes -p typescript@5.6.3 tsc -p test-types",
     "prepublishOnly": "npm run build && node --test test/*.test.js"
   }
 }

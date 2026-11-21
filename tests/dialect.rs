@@ -222,7 +222,19 @@ fn typos_and_bad_combinations_fail_at_registration() {
 fn path_values_stay_one_segment() {
     let clef = Dialect::builtin("clef").unwrap();
     let c = cfg(json!({ "api_key": "k", "account_id": "a" }));
-    for model in ["../admin", "x/y", "a?b", "a#b", "a%2f", "a b", ".."] {
+    for model in [
+        "../admin",
+        "x/y",
+        "a?b",
+        "a#b",
+        "a%2f",
+        "a b",
+        "..",
+        "{options.a}",
+        "{account_id}",
+        "a{b",
+        "a}b",
+    ] {
         let e = clef.build(model, &yesno(), &c).unwrap_err();
         assert_eq!(e.code, ErrorCode::InvalidRequest, "{model}");
         assert_eq!(
@@ -388,4 +400,31 @@ fn options_placeholders_fill_the_path() {
         let e = d.build("m1", &yesno(), &c).unwrap_err();
         assert_eq!(e.details.unwrap().field.as_deref(), Some("options.region"));
     }
+}
+
+/// A substituted value is never re-read as a placeholder. Before, an option whose
+/// value was its own placeholder made `build` loop forever.
+#[test]
+fn substituted_values_are_never_expanded_again() {
+    let d = Dialect::from_value(json!({
+        "extends": "systemone",
+        "base_url": "https://api.acme.test",
+        "path": "/{options.region}/v1/{model}"
+    }))
+    .unwrap();
+    for region in ["{options.region}", "{model}", "{options.", "a}", "{}"] {
+        let c = cfg(json!({ "options": { "region": region } }));
+        let e = d.build("m1", &yesno(), &c).unwrap_err();
+        assert_eq!(e.code, ErrorCode::InvalidRequest, "{region}");
+        assert_eq!(
+            e.details.unwrap().field.as_deref(),
+            Some("options.region"),
+            "{region}"
+        );
+    }
+    // The same through the model string, which the built-in dialects put in the path.
+    let clef = Dialect::builtin("clef").unwrap();
+    let c = cfg(json!({ "api_key": "k", "account_id": "a" }));
+    let e = clef.build("{options.a}", &yesno(), &c).unwrap_err();
+    assert_eq!(e.details.unwrap().field.as_deref(), Some("model"));
 }

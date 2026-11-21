@@ -1,4 +1,4 @@
-import type { Answer, DecisionRequest, DecisionResponse, Client, LetsDecideError } from "./index";
+import type { Answer, DecisionRequest, DecisionResponse, Client, LetsDecideError } from "./index.js";
 
 export type DecideOptions = { signal?: AbortSignal };
 export type Decide = (model: string, request: DecisionRequest, options?: DecideOptions) => Promise<DecisionResponse>;
