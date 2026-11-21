@@ -26,7 +26,7 @@ Live calls (2026-11-19) confirmed: all three question kinds, CSV documents, an
 
 The library names no default local model; consumers pick one
 ([plan D4](plan-custom-and-local-providers.md#d4-default-local-model-the-consumers-choice-decided)).
-Later, let a decision do the choosing:
+Later, help the consumer choose:
 
 - [ ] **Bake-off helper:** run the consumer's own labelled requests against
   candidate models (local and cloud) and report agreement, latency and cost
