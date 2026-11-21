@@ -344,7 +344,7 @@ Built in small steps; each lands only when needed. Details in
 - [x] Extras: OpenAI image URLs, `confidence_source`, cost estimates, `provider_extras`
 - [ ] Optional: live contract tests (not built: each run spends real tokens)
 - [ ] First release (crates.io, npm, PyPI, Maven, SwiftPM)
-- [ ] **M6** Custom providers and local models ([plan](docs/plan-custom-and-local-providers.md)). Done: registry, capabilities, response checks, error details, `headers`/`options` (P1); custom codecs and engines in JS and Python, mock engine, conformance kit (P2); per-provider credentials; dialects, with every built-in as data (P3)
+- [x] **M6** Custom providers ([plan](docs/plan-custom-and-local-providers.md)). Local-model runtime work (P4–P6) dropped, see [ADR 0016](docs/adr/0016-thin-access-layer.md). Done: registry, capabilities, response checks, error details, `headers`/`options` (P1); custom codecs and engines in JS and Python, mock engine, conformance kit (P2); per-provider credentials; dialects, with every built-in as data (P3)
 
 ## Contributing
 

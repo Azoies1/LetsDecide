@@ -1,6 +1,6 @@
 # 0013: Model runtimes ship in separate packages
 
-- Status: Accepted
+- Status: Superseded by [0016](0016-thin-access-layer.md)
 - Date: 2026-11-20
 
 ## Context

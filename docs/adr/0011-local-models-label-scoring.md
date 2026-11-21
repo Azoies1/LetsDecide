@@ -1,6 +1,6 @@
 # 0011: Local models read label probabilities; never parse generated text
 
-- Status: Accepted
+- Status: Superseded by [0016](0016-thin-access-layer.md)
 - Date: 2026-11-20
 
 ## Context

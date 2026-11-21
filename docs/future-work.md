@@ -28,16 +28,12 @@ The library names no default local model; consumers pick one
 ([plan D4](plan-custom-and-local-providers.md#d4-default-local-model-the-consumers-choice-decided)).
 Later, let a decision do the choosing:
 
-- [ ] **Decision-routed model choice:** a small, cheap decision question
-  ("is this request simple?", "does it contain an image?") picks which model
-  answers the real request, e.g. a local model for easy cases, a cloud model
-  for hard ones. Built as middleware over the registry.
 - [ ] **Bake-off helper:** run the consumer's own labelled requests against
   candidate models (local and cloud) and report agreement, latency and cost
   per question, so the choice is based on their data, not ours. Builds on
   `shadow` and M5.
 
-## Custom providers and local models (M6)
+## Custom providers (M6)
 
 Plan and decisions: [plan-custom-and-local-providers.md](plan-custom-and-local-providers.md).
 
@@ -52,11 +48,10 @@ Plan and decisions: [plan-custom-and-local-providers.md](plan-custom-and-local-p
   Swift). Not yet: verified example dialects for Perplexity and
   Microsoft-Decision-1. Their docs (docs.perplexity.ai, learn.microsoft.com)
   were not reachable from the build environment on 2026-11-20.
-- [ ] **P4** Local label scorer in the core; `letsdecide-serve` sidecar.
-- [ ] **P5** In-process engines (Python, JS); `escalate` and capability-aware
-  `fallback` middleware (`shadow` already ships).
-- [ ] **P6** Engine slots in the Swift and Kotlin clients (the bindings
-  themselves ship); reference engines for llama.cpp and ONNX NLI.
+- Dropped ([ADR 0016](adr/0016-thin-access-layer.md)): **P4** label scorer
+  and `letsdecide-serve`; **P5** in-process engines, `escalate`,
+  capability-aware `fallback`; **P6** Kotlin and Swift engine slots and
+  reference engines. Outside the thin access layer, or already covered.
 - [ ] Support tiers in the README (Built-in, Community, Custom).
 
 ## Gemini Decisions: not exposed
