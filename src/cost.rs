@@ -18,6 +18,7 @@ struct Price {
 fn prices() -> &'static BTreeMap<String, Price> {
     static P: OnceLock<BTreeMap<String, Price>> = OnceLock::new();
     P.get_or_init(|| {
+        #[allow(clippy::expect_used)] // embedded data, loaded by tests
         let p: Prices = serde_json::from_str(include_str!("../spec/prices.json"))
             .expect("spec/prices.json is valid");
         p.models
