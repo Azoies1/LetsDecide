@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)] // test helpers
+
 //! Registry, capabilities, response checks, config headers, and the rule
 //! that errors never carry sensitive data.
 

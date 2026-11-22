@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)] // test helpers
+
 //! Dialects: built-ins as data, `extends`, validation, and providers that
 //! differ from a built-in only in data.
 

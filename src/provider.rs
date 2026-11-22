@@ -156,6 +156,7 @@ impl Registry {
 
     /// The built-in adapters (see [`BUILTIN`]).
     pub fn builtin() -> Self {
+        #[allow(clippy::expect_used)] // every BUILTIN has an embedded dialect
         let providers = BUILTIN
             .iter()
             .map(|n| ((*n).to_owned(), builtin(n).expect("built-in exists")))
@@ -295,7 +296,9 @@ pub(crate) fn encode<T: Serialize>(body: &T, req: &DecisionRequest) -> Result<Ve
         return serde_json::to_vec(body).map_err(|e| invalid(e.to_string()));
     }
     let mut v = serde_json::to_value(body).map_err(|e| invalid(e.to_string()))?;
-    let obj = v.as_object_mut().expect("bodies are objects");
+    let obj = v
+        .as_object_mut()
+        .ok_or_else(|| invalid("body is not a JSON object".into()))?;
     for (k, x) in &req.provider_extras {
         if obj.contains_key(k) {
             return Err(invalid(format!(

@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)] // test helpers
+
 //! Golden fixtures: canonical request → exact HTTP request, and a recorded
 //! response → canonical result (or error). Run every `fixtures/**/*.json`.
 

@@ -70,7 +70,12 @@ fn run<T: Serialize>(f: impl FnOnce() -> Result<T, Error>) -> String {
         Ok(v) => Out::Ok(v),
         Err(e) => Out::Error(e.into()),
     };
+    #[allow(clippy::expect_used)] // plain data with string keys always serialises
     serde_json::to_string(&out).expect("output serialises")
+}
+
+fn utf8(body: Vec<u8>) -> Result<String, Error> {
+    String::from_utf8(body).map_err(|_| Error::new(ErrorCode::InvalidRequest, "body is not UTF-8"))
 }
 
 /// Never echoes the offending value: it may be user input.
@@ -97,7 +102,7 @@ pub fn build(model: &str, request: &str, config: &str) -> String {
             method: http.method,
             url: http.url,
             headers: http.headers,
-            body: String::from_utf8(http.body).expect("JSON is UTF-8"),
+            body: utf8(http.body)?,
         })
     })
 }
@@ -157,7 +162,7 @@ pub fn build_dialect(dialect: &str, model: &str, request: &str, config: &str) ->
             method: http.method,
             url: http.url,
             headers: http.headers,
-            body: String::from_utf8(http.body).expect("JSON is UTF-8"),
+            body: utf8(http.body)?,
         })
     })
 }
