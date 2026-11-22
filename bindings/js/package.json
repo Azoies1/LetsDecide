@@ -18,7 +18,8 @@
     ".": { "types": "./index.d.ts", "default": "./index.js" },
     "./middleware.js": { "types": "./middleware.d.ts", "default": "./middleware.js" },
     "./conformance": { "types": "./conformance.d.ts", "default": "./conformance.js" },
-    "./conformance.js": { "types": "./conformance.d.ts", "default": "./conformance.js" }
+    "./conformance.js": { "types": "./conformance.d.ts", "default": "./conformance.js" },
+    "./wasm": "./pkg/letsdecide_wasm_bg.wasm"
   },
   "files": ["index.js", "index.d.ts", "middleware.js", "middleware.d.ts", "conformance.js", "conformance.d.ts", "pkg"],
   "scripts": {

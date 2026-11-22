@@ -6,6 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- JS: `fetch` is now called unbound. Cloudflare Workers (workerd) threw
+  "Illegal invocation" because the default `globalThis.fetch` was called as a
+  method of the client.
+
+### Added
+- JS: `letsdecide/wasm` export of the `.wasm` file, so bundlers that respect
+  `exports` (Wrangler, esbuild) can import it. README: Cloudflare Workers setup.
+
 ## [0.3.0] - 2026-11-21
 
 ### Added

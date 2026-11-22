@@ -33,8 +33,8 @@ const result = await client.decide("gemini/gemini-decision-1", {
 result.answers.billing; // { kind: "yesno", probability: 0.97 }
 ```
 
-In Node, pass the WASM bytes (see [Node](#node) below). Browsers and edge
-runtimes load it by themselves.
+In Node and Cloudflare Workers, pass the WASM (see [Node](#node) and
+[Cloudflare Workers](#cloudflare-workers) below). Browsers load it by themselves.
 
 Change the model string (`"provider/model"`) to change provider. Supported:
 `jev/<model>`, `clef/<model>`, `gemini/<model>`, `openai/<model>` and
@@ -53,6 +53,18 @@ const wasm = readFileSync(
   new URL("./pkg/letsdecide_wasm_bg.wasm", import.meta.resolve("letsdecide")),
 );
 const client = new Client({ byProvider: { gemini: { apiKey: "..." } } }, { wasm });
+```
+
+### Cloudflare Workers
+
+workerd can't fetch the `.wasm` either. Import it (Wrangler compiles it to a
+`WebAssembly.Module`) and pass it:
+
+```js
+import wasm from "letsdecide/wasm";
+import { Client } from "letsdecide";
+
+const client = new Client({ byProvider: { gemini: { apiKey: env.GEMINI_API_KEY } } }, { wasm });
 ```
 
 ### Errors
